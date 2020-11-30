@@ -7,9 +7,9 @@ from utils import get_data
 
 class MatrixFactorization:
 
-    def __init__(self, k=15, gamma_u=0.01, gamma_i=0.001, gamma_u_b=0.01,
-                 gamma_i_b=0.001, lr_u=0.01, lr_i=0.001,
-                 lr_u_b=0.01, lr_i_b=0.001):
+    def __init__(self, k=15, gamma_u=0.01, gamma_i=0.01, gamma_u_b=0.01,
+                 gamma_i_b=0.01, lr_u=0.01, lr_i=0.01,
+                 lr_u_b=0.01, lr_i_b=0.01):
         self.k = k  # dimension to represent user/item vectors
         self.gamma_u = gamma_u
         self.gamma_i = gamma_i
@@ -61,10 +61,10 @@ class MatrixFactorization:
     def set_fit_params(self, train, valid):
         self.n_users = max(train[:, 0].max(), valid[:, 0].max()) + 1
         self.n_items = max(train[:, 1].max(), valid[:, 1].max()) + 1
-        # self.b_u = np.zeros(self.n_users)
-        self.b_u = np.random.normal(0, 1, self.n_users)
-        # self.b_i = np.zeros(self.n_items)
-        self.b_i = np.random.normal(0, 1, self.n_items)
+        self.b_u = np.zeros(self.n_users)
+        # self.b_u = np.random.normal(0, 1, self.n_users)
+        self.b_i = np.zeros(self.n_items)
+        # self.b_i = np.random.normal(0, 1, self.n_items)
         # self.p_u = np.zeros((self.n_users, self.k))
         self.p_u = np.random.normal(0, 1, (self.n_users, self.k))
         # self.q_i = np.zeros((self.n_items, self.k))
@@ -78,8 +78,10 @@ class MatrixFactorization:
 
         while True:
             self.run_epoch(train)
-            train_epoch_rmse = sqrt(self.mse(train.values))
-            valid_epoch_rmse = sqrt(self.mse(valid.values))
+            preds_train = np.array([self.predict(u, i) for u, i in train.values[:, [0, 1]]])
+            preds_valid = np.array([self.predict(u, i) for u, i in valid.values[:, [0, 1]]])
+            train_epoch_rmse = np.round(sqrt(self.mse(preds_train, train.values[:, 2])), 5)
+            valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 5)
             epoch_convergence = {"train rmse": train_epoch_rmse,
                                  "valid_rmse": valid_epoch_rmse}
             self.record(epoch_convergence)
@@ -235,43 +237,28 @@ if __name__ == '__main__':
         'gamma_i': np.random.normal(0.001, 0.0001, 1000),
         'gamma_u_b': np.random.normal(0.01, 0.001, 1000),
         'gamma_i_b': np.random.normal(0.001, 0.0001, 1000),
-        'lr_u': np.random.normal(0.01, 0.0001, 1000),
-        'lr_i': np.random.normal(0.001, 0.0001, 1000),
+        'lr_u': np.random.normal(0.01, 0.001, 1000),
+        'lr_i': np.random.normal(0.01, 0.0001, 1000),
         'lr_u_b': np.random.normal(0.01, 0.001, 1000),
-        'lr_i_b': np.random.normal(0.001, 0.0001, 1000)}
+        'lr_i_b': np.random.normal(0.01, 0.0001, 1000)}
 
     trials_num = 20
     best_valid_rmse = np.inf
     best_model, best_params = None, None
-    # for trial in range(trials_num):
-    #     trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
-    #     print('trial parameters:', trial_params)
-    #     cur_model = SGD(**trial_params)
-    #     # fit and update num of epochs in early stop
-    #     cur_model.fit(train, validation)
-    #     # refit according to num of epochs
-    #     cur_model.fit_early_stop(train, validation)
-    #     cur_valid_rmse = cur_model.rmse(validation)
-    #     print('trial rmse:', cur_valid_rmse)
-    #     if cur_valid_rmse < best_valid_rmse:
-    #         best_valid_rmse = cur_valid_rmse
-    #         best_model = cur_model
-    #         best_params = trial_params
-    #         save_model(best_model, 'sgd.npy')
 
     for trial in range(trials_num):
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
         print('trial parameters:', trial_params)
-        cur_model = ALS(**trial_params)
+        cur_model = SGD(**trial_params)
         # fit and update num of epochs in early stop
         cur_model.fit(train, validation)
         # refit according to num of epochs
         cur_model.fit_early_stop(train, validation)
-        cure_preds = np.array([cur_model.predict(u, i) for u, i in validation.values])
-        cur_valid_mse = cur_model.mse(cure_preds, validation[:, :, 2])
+        cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
+        cur_valid_mse = cur_model.mse(cur_preds, validation[:, :, 2])
         cur_valid_rmse = sqrt(cur_valid_mse)
         cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation[:, :, 2])
-        cur_valid_mae = cur_model.mae(cure_preds, validation[:, :, 2])
+        cur_valid_mae = cur_model.mae(cur_preds, validation[:, :, 2])
         # cur_model_mpr = cur_model.mpr(validation.values)
 
         print('trial rmse:', cur_valid_rmse)

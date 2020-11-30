@@ -245,7 +245,8 @@ if __name__ == '__main__':
     trials_num = 20
     best_valid_rmse = np.inf
     best_model, best_params = None, None
-
+    
+    #run trials
     for trial in range(trials_num):
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
         print('trial parameters:', trial_params)

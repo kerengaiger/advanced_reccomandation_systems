@@ -255,10 +255,10 @@ if __name__ == '__main__':
         # refit according to num of epochs
         cur_model.fit_early_stop(train, validation)
         cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
-        cur_valid_mse = cur_model.mse(cur_preds, validation[:, :, 2])
+        cur_valid_mse = cur_model.mse(cur_preds, validation[:, 2])
         cur_valid_rmse = sqrt(cur_valid_mse)
-        cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation[:, :, 2])
-        cur_valid_mae = cur_model.mae(cur_preds, validation[:, :, 2])
+        cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation[:, 2])
+        cur_valid_mae = cur_model.mae(cur_preds, validation[:, 2])
         # cur_model_mpr = cur_model.mpr(validation.values)
 
         print('trial rmse:', cur_valid_rmse)

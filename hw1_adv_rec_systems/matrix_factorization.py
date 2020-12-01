@@ -232,15 +232,15 @@ if __name__ == '__main__':
 
     # hyper param tuning
     params = {
-        'k': [15, 20, 25],
-        'gamma_u': np.random.normal(0.01, 0.001, 1000),
-        'gamma_i': np.random.normal(0.001, 0.0001, 1000),
-        'gamma_u_b': np.random.normal(0.01, 0.001, 1000),
-        'gamma_i_b': np.random.normal(0.001, 0.0001, 1000),
-        'lr_u': np.random.normal(0.01, 0.001, 1000),
-        'lr_i': np.random.normal(0.01, 0.0001, 1000),
-        'lr_u_b': np.random.normal(0.01, 0.001, 1000),
-        'lr_i_b': np.random.normal(0.01, 0.0001, 1000)}
+        'k': [30],
+        'gamma_u':[0.02],
+        'gamma_i': [0.02],
+        'gamma_u_b': [0.02],
+        'gamma_i_b': [0.02],
+        'lr_u': [0.05],
+        'lr_i': [0.05],
+        'lr_u_b': [0.05],
+        'lr_i_b': [0.05]}
 
     trials_num = 20
     best_valid_rmse = np.inf

@@ -255,7 +255,7 @@ def save_model(model, out_file_name):
 
 
 if __name__ == '__main__':
-    train, validation = get_data(True,0.1,1)
+    train, validation = get_data(True, 0.1, 1)
 
     # hyper param tuning
     params = {

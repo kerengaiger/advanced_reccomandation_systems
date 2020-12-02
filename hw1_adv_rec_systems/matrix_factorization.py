@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import sqrt, square
-
+import json
 from config import USER_COL, ITEM_COL, RATING_COL
 from utils import get_data
 
@@ -33,6 +33,8 @@ class MatrixFactorization:
         self.last_epoch_val_loss = np.inf
         self.last_epoch_increase = False
         self.early_stop_epoch = 0
+        self.best_rmse = 0
+
 
     def mse(self, preds, true_values):
         return np.sum(np.square(np.subtract(true_values, preds))) / true_values.shape[0]
@@ -51,6 +53,7 @@ class MatrixFactorization:
     def record(self, covn_dict):
         epoch = "{:02d}".format(self.current_epoch)
         temp = f"| epoch   # {epoch} :"
+
         for key, value in covn_dict.items():
             key = f"{key}"
             val = '{:.9}'.format(value)
@@ -59,17 +62,13 @@ class MatrixFactorization:
         print(temp)
 
     def set_fit_params(self, train, valid):
-        self.n_users = max(train.values[:, 0].max(), valid.values[:, 0].max()) + 1
-        self.n_items = max(train.values[:, 1].max(), valid.values[:, 1].max()) + 1
-
+        self.n_users = max(train[:, 0].max(), valid[:, 0].max()) + 1
+        self.n_items = max(train[:, 1].max(), valid[:, 1].max()) + 1
         self.b_u = np.zeros(self.n_users)
-        # user_means = train.groupby(USER_COL).rating.mean().reset_index()
-        # self.b_u[user_means[USER_COL].tolist()] = user_means[RATING_COL].tolist()
-
+        # self.b_u = np.random.normal(0, 1, self.n_users)
         self.b_i = np.zeros(self.n_items)
-        # item_means = train.groupby(ITEM_COL).rating.mean().reset_index()
-        # self.b_i[item_means[ITEM_COL].tolist()] = item_means[RATING_COL].tolist()
-
+        # self.b_i = np.random.normal(0, 1, self.n_items)
+        # self.p_u = np.zeros((self.n_users, self.k))
         self.p_u = np.random.normal(0, 1, (self.n_users, self.k))
         self.q_i = np.random.normal(0, 1, (self.n_items, self.k))
         self.mu = train.values[:, 2].mean()
@@ -81,10 +80,17 @@ class MatrixFactorization:
 
         while True:
             self.run_epoch(train)
-            preds_train = np.array([self.predict(u, i) for u, i in train.values[:, [0, 1]]])
-            preds_valid = np.array([self.predict(u, i) for u, i in valid.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(sqrt(self.mse(preds_train, train.values[:, 2])), 5)
-            valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 5)
+            self.r_hat = np.dot(self.q_i,self.p_u.T)
+            preds_train = np.array([self.predictt(u, i) for u, i in train.values[:, [0, 1]]])
+            preds_valid = np.array([self.predictt(u, i) for u, i in valid.values[:, [0, 1]]])
+            # preds_train = np.array([self.predict(u, i) for u, i in train.values[:, [0, 1]]])
+            # preds_valid = np.array([self.predict(u, i) for u, i in valid.values[:, [0, 1]]])
+            # check for nan valaues
+            if(preds_valid[0] != preds_valid[0]):
+                print('problem with hyper-params, nan values were found')
+                break
+            train_epoch_rmse = np.round(sqrt(self.mse(preds_train, train.values[:, 2])), 4)
+            valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 4)
             epoch_convergence = {"train rmse": train_epoch_rmse,
                                  "valid_rmse": valid_epoch_rmse}
             self.record(epoch_convergence)
@@ -94,6 +100,10 @@ class MatrixFactorization:
                 break
             self.last_epoch_increase = \
                 valid_epoch_rmse >= self.last_epoch_val_loss
+
+            if(self.last_epoch_increase==False):
+                self.best_rmse = valid_epoch_rmse
+
             self.current_epoch += 1
             self.last_epoch_val_loss = valid_epoch_rmse
 
@@ -120,6 +130,12 @@ class MatrixFactorization:
                      self.q_i[i, :].T.dot(self.p_u[u, :])
         return r_u_i_pred
 
+    def predictt(self, u, i):
+        r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
+                     self.r_hat[i,u]
+        return r_u_i_pred
+
+
     def step(self, e_u_i, u, i):
         # implemented in each of son classes
         pass
@@ -145,8 +161,6 @@ class SGD(MatrixFactorization):
         for u, i, r_u_i in train.values:
             r_u_i_pred = self.predict(u, i)
             e_u_i = r_u_i - r_u_i_pred
-            # if u == 1 and i == 132:
-            #     print(e_u_i)
             self.step(e_u_i, u, i)
 
         # exponential decay
@@ -224,48 +238,56 @@ def save_model(model, out_file_name):
 
 
 if __name__ == '__main__':
-    train, validation = get_data()
+    train, validation = get_data(True,0.1,1)
 
     # hyper param tuning
     params = {
-        'k': [15, 20, 25, 30, 35, 40],
-        'gamma_u': np.random.normal(0.01, 0.005, 1000),
-        'gamma_i': np.random.normal(0.01, 0.005, 1000),
-        'gamma_u_b': np.random.normal(0.01, 0.005, 1000),
-        'gamma_i_b': np.random.normal(0.01, 0.005, 1000),
-        'lr_u': np.random.normal(0.01, 0.005, 1000),
-        'lr_i': np.random.normal(0.01, 0.005, 1000),
-        'lr_u_b': np.random.normal(0.01, 0.005, 1000),
-        'lr_i_b': np.random.normal(0.01, 0.005, 1000)}
+        'k': [13,15,17,20],
+        'gamma_u':[0.2,0.1,0.3],
+        'gamma_i': [0.3,0.2,0.1,0.4],
+        'gamma_u_b': [0.02,0.01,0.1],
+        'gamma_i_b': [0.02,0.01,0.1],
+        'lr_u': [0.05,0.01,0.005,0.1],
+        'lr_i': [0.05,0.01,0.005,0.1],
+        'lr_u_b': [0.05,0.01,0.005,0.1],
+        'lr_i_b': [0.05,0.01,0.005,0.1]}
 
 
     trials_num = 10
     best_valid_rmse = np.inf
     best_model, best_params = None, None
 
+    #run trials
+    trials_dict = {}
     for trial in range(trials_num):
+        print("------------------------------------------------")
+        print("trial number : ",trial)
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
+        # trial_params = {'k': 20, 'gamma_u': 0.3, 'gamma_i': 0.4, 'gamma_u_b': 0.01, 'gamma_i_b': 0.02, 'lr_u': 0.1, 'lr_i': 0.01, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
         print('trial parameters:', trial_params)
         cur_model = SGD(**trial_params)
         # fit and update num of epochs in early stop
         cur_model.fit(train, validation)
+        trials_dict[str(trial)] = (str(cur_model.best_rmse),str(trial_params))
         # refit according to num of epochs
-        cur_model.fit_early_stop(train, validation)
-
-        cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
-        cur_valid_mse = cur_model.mse(cur_preds, validation.values[:, 2])
-        cur_valid_rmse = sqrt(cur_valid_mse)
-        cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation.values[:, 2])
-        cur_valid_mae = cur_model.mae(cur_preds, validation.values[:, 2])
+        # cur_model.fit_early_stop(train, validation)
+        # cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
+        # cur_valid_mse = cur_model.mse(cur_preds, validation[:, 2])
+        # cur_valid_rmse = sqrt(cur_valid_mse)
+        # cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation[:, 2])
+        # cur_valid_mae = cur_model.mae(cur_preds, validation[:, 2])
         # cur_model_mpr = cur_model.mpr(validation.values)
 
-        print('trial rmse:', cur_valid_rmse)
-        if cur_valid_rmse < best_valid_rmse:
-            best_valid_rmse = cur_valid_rmse
-            best_valid_r_2 = cur_valid_r_2
-            best_valid_mae = cur_valid_mae
-            # best_valid_mpr = cur_model_mpr
-            best_params = trial_params
+        # print('trial rmse:', cur_valid_rmse)
+        # if cur_valid_rmse < best_valid_rmse:
+        #     best_valid_rmse = cur_valid_rmse
+        #     best_valid_r_2 = cur_valid_r_2
+        #     best_valid_mae = cur_valid_mae
+        #     # best_valid_mpr = cur_model_mpr
+        #     best_params = trial_params
+        if(trial == trials_num-1):
+            with open('params_dict.txt', 'w',encoding="utf8") as outfile:
+                json.dump(trials_dict, outfile)
 
     print(best_valid_rmse)
     print(best_valid_r_2)

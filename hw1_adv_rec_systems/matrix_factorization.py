@@ -243,16 +243,15 @@ if __name__ == '__main__':
 
     # hyper param tuning
     params = {
-        'k': [13,15,17,20],
-        'gamma_u':[0.2,0.1,0.3],
-        'gamma_i': [0.3,0.2,0.1,0.4],
-        'gamma_u_b': [0.02,0.01,0.1],
-        'gamma_i_b': [0.02,0.01,0.1],
-        'lr_u': [0.05,0.01,0.005,0.1],
-        'lr_i': [0.05,0.01,0.005,0.1],
-        'lr_u_b': [0.05,0.01,0.005,0.1],
-        'lr_i_b': [0.05,0.01,0.005,0.1]}
-
+        'k': [13, 15, 17, 20],
+        'gamma_u': [0.2, 0.1, 0.3],
+        'gamma_i': [0.3, 0.2, 0.1, 0.4],
+        'gamma_u_b': [0.02, 0.01, 0.1],
+        'gamma_i_b': [0.02, 0.01, 0.1],
+        'lr_u': [0.05, 0.01, 0.005, 0.1],
+        'lr_i': [0.05, 0.01, 0.005, 0.1],
+        'lr_u_b': [0.05, 0.01, 0.005, 0.1],
+        'lr_i_b': [0.05, 0.01, 0.005, 0.1]}
 
     trials_num = 10
     best_valid_rmse = np.inf
@@ -262,7 +261,7 @@ if __name__ == '__main__':
     trials_dict = {}
     for trial in range(trials_num):
         print("------------------------------------------------")
-        print("trial number : ",trial)
+        print("trial number : ", trial)
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
         # trial_params = {'k': 20, 'gamma_u': 0.3, 'gamma_i': 0.4, 'gamma_u_b': 0.01, 'gamma_i_b': 0.02, 'lr_u': 0.1, 'lr_i': 0.01, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
         print('trial parameters:', trial_params)

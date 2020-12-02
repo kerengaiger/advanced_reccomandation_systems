@@ -80,13 +80,13 @@ class MatrixFactorization:
 
         while True:
             self.run_epoch(train)
-            self.r_hat = np.dot(self.q_i,self.p_u.T)
+            self.r_hat = np.dot(self.q_i, self.p_u.T)
             preds_train = np.array([self.predictt(u, i) for u, i in train.values[:, [0, 1]]])
             preds_valid = np.array([self.predictt(u, i) for u, i in valid.values[:, [0, 1]]])
             # preds_train = np.array([self.predict(u, i) for u, i in train.values[:, [0, 1]]])
             # preds_valid = np.array([self.predict(u, i) for u, i in valid.values[:, [0, 1]]])
             # check for nan valaues
-            if(preds_valid[0] != preds_valid[0]):
+            if preds_valid[0] != preds_valid[0]:
                 print('problem with hyper-params, nan values were found')
                 break
             train_epoch_rmse = np.round(sqrt(self.mse(preds_train, train.values[:, 2])), 4)
@@ -98,10 +98,11 @@ class MatrixFactorization:
                 self.early_stop_epoch = self.current_epoch - 2
                 print('early stop! best epochs:', self.early_stop_epoch)
                 break
+
             self.last_epoch_increase = \
                 valid_epoch_rmse >= self.last_epoch_val_loss
 
-            if(self.last_epoch_increase==False):
+            if not self.last_epoch_increase:
                 self.best_rmse = valid_epoch_rmse
 
             self.current_epoch += 1
@@ -268,7 +269,7 @@ if __name__ == '__main__':
         cur_model = SGD(**trial_params)
         # fit and update num of epochs in early stop
         cur_model.fit(train, validation)
-        trials_dict[str(trial)] = (str(cur_model.best_rmse),str(trial_params))
+        trials_dict[str(trial)] = (str(cur_model.best_rmse), str(trial_params))
         # refit according to num of epochs
         # cur_model.fit_early_stop(train, validation)
         # cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])

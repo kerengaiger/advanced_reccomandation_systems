@@ -34,6 +34,8 @@ class MatrixFactorization:
         self.last_epoch_increase = False
         self.early_stop_epoch = 0
         self.best_rmse = 0
+        self.r2 = 0
+        self.mae = 0
 
 
     def mse(self, preds, true_values):
@@ -75,6 +77,14 @@ class MatrixFactorization:
 
         self.current_epoch = 0
 
+    def calc_metrics(self, valid, preds_valid):
+        mse_valid = self.mse(preds_valid, valid[:, 2])
+        rmse_valid = np.round(sqrt(mse_valid), 4)
+        r2_valid = 1 - mse_valid / np.var(valid[:, 2])
+        mae_valid = self.mae(preds_valid, valid[:, 2])
+
+        return rmse_valid, r2_valid, mae_valid
+
     def fit(self, train, valid):
         self.set_fit_params(train, valid)
 
@@ -82,19 +92,23 @@ class MatrixFactorization:
             self.run_epoch(train)
             self.r_hat = np.dot(self.q_i, self.p_u.T)
             preds_train = np.array([self.predictt(u, i) for u, i in train.values[:, [0, 1]]])
+            train_epoch_rmse = np.round(
+                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
+
             preds_valid = np.array([self.predictt(u, i) for u, i in valid.values[:, [0, 1]]])
-            # preds_train = np.array([self.predict(u, i) for u, i in train.values[:, [0, 1]]])
-            # preds_valid = np.array([self.predict(u, i) for u, i in valid.values[:, [0, 1]]])
             # check for nan valaues
             if preds_valid[0] != preds_valid[0]:
                 print('problem with hyper-params, nan values were found')
                 break
-            train_epoch_rmse = np.round(sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 4)
+
+            # valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 4)
+            valid_epoch_rmse, valid_epoch_r2, valid_epoch_mae = \
+                self.calc_metrics(valid.values, preds_valid)
             epoch_convergence = {"train rmse": train_epoch_rmse,
                                  "valid_rmse": valid_epoch_rmse}
             self.record(epoch_convergence)
-            if (valid_epoch_rmse >= self.last_epoch_val_loss) and self.last_epoch_increase:
+            if (valid_epoch_rmse >= self.last_epoch_val_loss) and \
+                    self.last_epoch_increase:
                 self.early_stop_epoch = self.current_epoch - 2
                 print('early stop! best epochs:', self.early_stop_epoch)
                 break
@@ -104,6 +118,8 @@ class MatrixFactorization:
 
             if not self.last_epoch_increase:
                 self.best_rmse = valid_epoch_rmse
+                self.r2 = valid_epoch_r2
+                self.mae = valid_epoch_mae
 
             self.current_epoch += 1
             self.last_epoch_val_loss = valid_epoch_rmse
@@ -269,6 +285,11 @@ if __name__ == '__main__':
         # fit and update num of epochs in early stop
         cur_model.fit(train, validation)
         trials_dict[str(trial)] = (str(cur_model.best_rmse), str(trial_params))
+        print('trial best epoch:', cur_model.early_stop_epoch)
+        print('trial valid rmse of best epoch:', cur_model.best_rmse)
+        print('trial valid r2 of best epoch:', cur_model.r2)
+        print('trial valid mae of best epoch:', cur_model.mae)
+
         # refit according to num of epochs
         # cur_model.fit_early_stop(train, validation)
         # cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
@@ -285,7 +306,7 @@ if __name__ == '__main__':
         #     best_valid_mae = cur_valid_mae
         #     # best_valid_mpr = cur_model_mpr
         #     best_params = trial_params
-        if(trial == trials_num-1):
+        if trial == trials_num-1:
             with open('params_dict.txt', 'w',encoding="utf8") as outfile:
                 json.dump(trials_dict, outfile)
 

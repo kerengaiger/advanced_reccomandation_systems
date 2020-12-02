@@ -1,5 +1,5 @@
-TRAIN_PATH = "data/Train.csv"
-VALIDATION_PATH = "data/Validation.csv"
+TRAIN_PATH = "C:\\projects\\advanced_recsys_1\\advanced_reccomandation_systems\\hw1_adv_rec_systems\\data\\Train.csv"
+VALIDATION_PATH = "C:\\projects\\advanced_recsys_1\\advanced_reccomandation_systems\\hw1_adv_rec_systems\\data\\Validation.csv"
 
 USER_COL_NAME_IN_DATAEST = 'User_ID_Alias'
 ITEM_COL_NAME_IN_DATASET = 'Movie_ID_Alias'

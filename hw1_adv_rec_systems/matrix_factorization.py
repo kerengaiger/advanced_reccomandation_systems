@@ -34,8 +34,8 @@ class MatrixFactorization:
         self.last_epoch_increase = False
         self.early_stop_epoch = 0
         self.best_rmse = 0
-        self.r2 = 0
-        self.mae = 0
+        self.r2_valid = 0
+        self.mae_valid = 0
 
 
     def mse(self, preds, true_values):
@@ -73,7 +73,7 @@ class MatrixFactorization:
         # self.p_u = np.zeros((self.n_users, self.k))
         self.p_u = np.random.normal(0, 1, (self.n_users, self.k))
         self.q_i = np.random.normal(0, 1, (self.n_items, self.k))
-        self.mu = train.values[:, 2].mean()
+        self.mu = train[:, 2].mean()
 
         self.current_epoch = 0
 
@@ -86,7 +86,7 @@ class MatrixFactorization:
         return rmse_valid, r2_valid, mae_valid
 
     def fit(self, train, valid):
-        self.set_fit_params(train, valid)
+        self.set_fit_params(train.values, valid.values)
 
         while True:
             self.run_epoch(train)
@@ -118,8 +118,8 @@ class MatrixFactorization:
 
             if not self.last_epoch_increase:
                 self.best_rmse = valid_epoch_rmse
-                self.r2 = valid_epoch_r2
-                self.mae = valid_epoch_mae
+                self.r2_valid = valid_epoch_r2
+                self.mae_valid = valid_epoch_mae
 
             self.current_epoch += 1
             self.last_epoch_val_loss = valid_epoch_rmse

@@ -287,8 +287,8 @@ if __name__ == '__main__':
         trials_dict[str(trial)] = (str(cur_model.best_rmse), str(trial_params))
         print('trial best epoch:', cur_model.early_stop_epoch)
         print('trial valid rmse of best epoch:', cur_model.best_rmse)
-        print('trial valid r2 of best epoch:', cur_model.r2)
-        print('trial valid mae of best epoch:', cur_model.mae)
+        print('trial valid r2 of best epoch:', cur_model.r2_valid)
+        print('trial valid mae of best epoch:', cur_model.mae_valid)
 
         # refit according to num of epochs
         # cur_model.fit_early_stop(train, validation)

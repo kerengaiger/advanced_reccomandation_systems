@@ -59,22 +59,25 @@ class MatrixFactorization:
         print(temp)
 
     def set_fit_params(self, train, valid):
-        self.n_users = max(train[:, 0].max(), valid[:, 0].max()) + 1
-        self.n_items = max(train[:, 1].max(), valid[:, 1].max()) + 1
+        self.n_users = max(train.values[:, 0].max(), valid.values[:, 0].max()) + 1
+        self.n_items = max(train.values[:, 1].max(), valid.values[:, 1].max()) + 1
+
         self.b_u = np.zeros(self.n_users)
-        # self.b_u = np.random.normal(0, 1, self.n_users)
+        # user_means = train.groupby(USER_COL).rating.mean().reset_index()
+        # self.b_u[user_means[USER_COL].tolist()] = user_means[RATING_COL].tolist()
+
         self.b_i = np.zeros(self.n_items)
-        # self.b_i = np.random.normal(0, 1, self.n_items)
-        # self.p_u = np.zeros((self.n_users, self.k))
+        # item_means = train.groupby(ITEM_COL).rating.mean().reset_index()
+        # self.b_i[item_means[ITEM_COL].tolist()] = item_means[RATING_COL].tolist()
+
         self.p_u = np.random.normal(0, 1, (self.n_users, self.k))
-        # self.q_i = np.zeros((self.n_items, self.k))
         self.q_i = np.random.normal(0, 1, (self.n_items, self.k))
-        self.mu = train[:, 2].mean()
+        self.mu = train.values[:, 2].mean()
 
         self.current_epoch = 0
 
     def fit(self, train, valid):
-        self.set_fit_params(train.values, valid.values)
+        self.set_fit_params(train, valid)
 
         while True:
             self.run_epoch(train)
@@ -105,7 +108,7 @@ class MatrixFactorization:
             np.save(f, self.b_i)
 
     def fit_early_stop(self, train, valid):
-        self.set_fit_params(train.values, valid.values)
+        self.set_fit_params(train, valid)
 
         for epoch in range(self.early_stop_epoch):
             self.current_epoch = epoch
@@ -142,6 +145,8 @@ class SGD(MatrixFactorization):
         for u, i, r_u_i in train.values:
             r_u_i_pred = self.predict(u, i)
             e_u_i = r_u_i - r_u_i_pred
+            # if u == 1 and i == 132:
+            #     print(e_u_i)
             self.step(e_u_i, u, i)
 
         # exponential decay
@@ -160,9 +165,6 @@ class ALS(MatrixFactorization):
                 a += r_u_i - self.mu - self.b_i[i] - self.p_u[u].dot(self.q_i[i].T)
             self.b_u[u] = a / (train[train[USER_COL] == u].shape[0] +
                                self.gamma_u_b)
-            # if u == 1:
-            #     print('update user 1 bu:', a / (train[train[USER_COL] == u].shape[0] +
-            #                    self.gamma_u_b))
 
     def update_p_u(self, train):
         for u in train[USER_COL].unique():
@@ -178,8 +180,6 @@ class ALS(MatrixFactorization):
             a = np.add(sum_i_mat, self.gamma_u * np.identity(self.k))
             b = sum_i_vec
             self.p_u[u, :] = np.squeeze(np.dot(np.linalg.inv(a), b))
-            # if u==10:
-            #     print('user 1 pu', np.squeeze(np.dot(np.linalg.inv(a), b)))
 
     def update_b_i(self, train):
         for i in train[ITEM_COL].unique():
@@ -189,9 +189,6 @@ class ALS(MatrixFactorization):
                 a += r_u_i - self.mu - self.b_u[u] - self.p_u[u].dot(self.q_i[i].T)
             self.b_i[i] = a / (train[train[ITEM_COL] == i].shape[0] +
                                self.gamma_i_b)
-            # if i == 1055:
-            #     print('item 1055 bi', a / (train[train[ITEM_COL] == i].shape[0] +
-            #                    self.gamma_i_b))
 
     def update_q_i(self, train):
         for i in train[ITEM_COL].unique():
@@ -207,8 +204,6 @@ class ALS(MatrixFactorization):
             a = np.add(sum_u_mat, self.gamma_i * np.identity(self.k))
             b = sum_u_vec
             self.q_i[i, :] = np.squeeze(np.dot(np.linalg.inv(a), b))
-            # if i == 1055:
-            #     print('item 1055 qi', np.squeeze(np.dot(np.linalg.inv(a), b)))
 
     def run_epoch(self, train):
         self.update_p_u(train)
@@ -227,22 +222,24 @@ def save_model(model, out_file_name):
     with open('b_i_' + out_file_name, 'wb') as f:
         np.save(f, model.b_i)
 
+
 if __name__ == '__main__':
     train, validation = get_data()
 
     # hyper param tuning
     params = {
-        'k': [15, 20, 25],
-        'gamma_u': np.random.normal(0.01, 0.001, 1000),
-        'gamma_i': np.random.normal(0.001, 0.0001, 1000),
-        'gamma_u_b': np.random.normal(0.01, 0.001, 1000),
-        'gamma_i_b': np.random.normal(0.001, 0.0001, 1000),
-        'lr_u': np.random.normal(0.01, 0.001, 1000),
-        'lr_i': np.random.normal(0.01, 0.0001, 1000),
-        'lr_u_b': np.random.normal(0.01, 0.001, 1000),
-        'lr_i_b': np.random.normal(0.01, 0.0001, 1000)}
+        'k': [15, 20, 25, 30, 35, 40],
+        'gamma_u': np.random.normal(0.01, 0.005, 1000),
+        'gamma_i': np.random.normal(0.01, 0.005, 1000),
+        'gamma_u_b': np.random.normal(0.01, 0.005, 1000),
+        'gamma_i_b': np.random.normal(0.01, 0.005, 1000),
+        'lr_u': np.random.normal(0.01, 0.005, 1000),
+        'lr_i': np.random.normal(0.01, 0.005, 1000),
+        'lr_u_b': np.random.normal(0.01, 0.005, 1000),
+        'lr_i_b': np.random.normal(0.01, 0.005, 1000)}
 
-    trials_num = 20
+
+    trials_num = 10
     best_valid_rmse = np.inf
     best_model, best_params = None, None
 
@@ -254,11 +251,12 @@ if __name__ == '__main__':
         cur_model.fit(train, validation)
         # refit according to num of epochs
         cur_model.fit_early_stop(train, validation)
+
         cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
-        cur_valid_mse = cur_model.mse(cur_preds, validation[:, 2])
+        cur_valid_mse = cur_model.mse(cur_preds, validation.values[:, 2])
         cur_valid_rmse = sqrt(cur_valid_mse)
-        cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation[:, 2])
-        cur_valid_mae = cur_model.mae(cur_preds, validation[:, 2])
+        cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation.values[:, 2])
+        cur_valid_mae = cur_model.mae(cur_preds, validation.values[:, 2])
         # cur_model_mpr = cur_model.mpr(validation.values)
 
         print('trial rmse:', cur_valid_rmse)

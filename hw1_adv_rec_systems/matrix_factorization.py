@@ -306,9 +306,9 @@ if __name__ == '__main__':
         #     best_valid_mae = cur_valid_mae
         #     # best_valid_mpr = cur_model_mpr
         #     best_params = trial_params
-        if trial == trials_num-1:
-            with open('params_dict.txt', 'w',encoding="utf8") as outfile:
-                json.dump(trials_dict, outfile)
+
+    with open('params_dict.txt', 'w',encoding="utf8") as outfile:
+        json.dump(trials_dict, outfile)
 
     print(best_valid_rmse)
     print(best_valid_r_2)

@@ -137,16 +137,6 @@ class MatrixFactorization:
             self.current_epoch += 1
             self.last_epoch_val_loss = valid_epoch_rmse
 
-    def save_model_params(self, name_out):
-        with open('p_u_' + name_out, 'wb') as f:
-            np.save(f, self.p_u)
-        with open('q_i_' + name_out, 'wb') as f:
-            np.save(f, self.q_i)
-        with open('b_u_' + name_out, 'wb') as f:
-            np.save(f, self.b_u)
-        with open('b_i_' + name_out, 'wb') as f:
-            np.save(f, self.b_i)
-
     def fit_early_stop(self, train, valid, epochs):
         full_data = pd.concat([train, validation])
 
@@ -262,17 +252,6 @@ class ALS(MatrixFactorization):
         self.update_b_u(train)
         self.update_q_i(train)
         self.update_b_i(train)
-
-
-def save_model(model, out_file_name):
-    with open('p_u_' + out_file_name, 'wb') as f:
-        np.save(f, model.p_u)
-    with open('q_i_' + out_file_name, 'wb') as f:
-        np.save(f, model.q_i)
-    with open('b_u_' + out_file_name, 'wb') as f:
-        np.save(f, model.b_u)
-    with open('b_i_' + out_file_name, 'wb') as f:
-        np.save(f, model.b_i)
 
 
 def hyper_param_tuning(method, params):

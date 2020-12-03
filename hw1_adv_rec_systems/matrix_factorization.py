@@ -114,7 +114,8 @@ class MatrixFactorization:
             valid_epoch_rmse, valid_epoch_r2, valid_epoch_mae = \
                 self.calc_metrics(valid.values, preds_valid)
             epoch_convergence = {"train rmse": train_epoch_rmse,
-                                 "valid_rmse": valid_epoch_rmse}
+                                 "valid_rmse": valid_epoch_rmse,
+                                 "R^2" :  }
             self.record(epoch_convergence)
             if (valid_epoch_rmse >= self.last_epoch_val_loss) and \
                     self.last_epoch_increase:
@@ -276,6 +277,11 @@ def hyper_param_tuning(model, params):
         print("------------------------------------------------")
         print("trial number : ", trial)
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
+<<<<<<< HEAD
+        # 0.912
+        trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
+        # trial_params = {'k': 15, 'gamma_u': 0.1, 'gamma_i': 0.1, 'gamma_u_b': 0.02, 'gamma_i_b': 0.1, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
+=======
 
         print('trial parameters:', trial_params)
         model.set_hyper_params(**trial_params)

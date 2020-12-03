@@ -185,7 +185,7 @@ class SGD(MatrixFactorization):
 
     def run_epoch(self, train):
         for u, i, r_u_i in train.values:
-            r_u_i_pred = self.predict(u, i)
+            r_u_i_pred = self.predictt(u, i)
             e_u_i = r_u_i - r_u_i_pred
             self.step(e_u_i, u, i)
 

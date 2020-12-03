@@ -1,5 +1,6 @@
 from config import TRAIN_PATH, VALIDATION_PATH, USER_COL_NAME_IN_DATAEST, \
-    ITEM_COL_NAME_IN_DATASET, USER_COL, ITEM_COL, RATING_COL, RATING_COL_NAME_IN_DATASET
+    ITEM_COL_NAME_IN_DATASET, USER_COL, ITEM_COL, RATING_COL, \
+    RATING_COL_NAME_IN_DATASET, TEST_PATH
 from scipy.sparse import csr_matrix
 import pandas as pd
 
@@ -29,6 +30,14 @@ def get_data(small_data=False, train_size=0.05, valid_size=0.4):
     train_df = train_df.iloc[:int(train_df.shape[0]*train_size), :] if small_data else train_df
     valid_df = valid_df.iloc[:int(valid_df.shape[0]*valid_size), :] if small_data else valid_df
     return train_df[[USER_COL, ITEM_COL, RATING_COL]], valid_df[[USER_COL, ITEM_COL, RATING_COL]]
+
+
+def get_test():
+    test_df = pd.read_csv(TEST_PATH)
+    test_df[USER_COL] = test_df[USER_COL_NAME_IN_DATAEST] - 1
+    test_df[ITEM_COL] = test_df[ITEM_COL_NAME_IN_DATASET] - 1
+
+    return test_df[[USER_COL, ITEM_COL]]
 
 
 class Config:

@@ -1,8 +1,10 @@
 import numpy as np
+import pandas as pd
 from numpy import sqrt, square
 import json
-from config import USER_COL, ITEM_COL, RATING_COL
-from utils import get_data
+from config import USER_COL, ITEM_COL, RATING_COL, SGD_HYPER_PARAMS, \
+    ALS_HYPER_PARAMS, TEST_OUT_SGD, TEST_OUT_ALS
+from utils import get_data, get_test
 
 
 class MatrixFactorization:
@@ -37,9 +39,22 @@ class MatrixFactorization:
         self.r2_valid = 0
         self.mae_valid = 0
 
+    def set_hyper_params(self, k, gamma_u, gamma_i, gamma_u_b,
+                 gamma_i_b, lr_u, lr_i,
+                 lr_u_b, lr_i_b):
+
+        self.k = k  # dimension to represent user/item vectors
+        self.gamma_u = gamma_u
+        self.gamma_i = gamma_i
+        self.gamma_u_b = gamma_u_b
+        self.gamma_i_b = gamma_i_b
+        self.lr_u = lr_u
+        self.lr_i = lr_i
+        self.lr_u_b = lr_u_b
+        self.lr_i_b = lr_i_b
 
     def mse(self, preds, true_values):
-        return np.sum(np.square(np.subtract(true_values, preds))) / true_values.shape[0]
+        return np.sum(square(np.subtract(true_values, preds))) / true_values.shape[0]
 
     def mae(self, preds, true_values):
         return np.sum(np.absolute(np.subtract(true_values, preds))) / true_values.shape[0]
@@ -126,27 +141,26 @@ class MatrixFactorization:
         with open('b_i_' + name_out, 'wb') as f:
             np.save(f, self.b_i)
 
-    def fit_early_stop(self, train, valid):
+    def fit_early_stop(self, train, valid, epochs):
         self.set_fit_params(train, valid)
 
-        for epoch in range(self.early_stop_epoch):
+        full_data = pd.concat([train, validation])
+        for epoch in range(epochs):
             self.current_epoch = epoch
-            self.run_epoch(train)
-        # self.save_model_params('sgd.npy')
+            self.run_epoch(full_data)
 
     def predict(self, u, i):
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
                      self.q_i[i, :].T.dot(self.p_u[u, :])
         return r_u_i_pred
 
-    def predictt(self, u, i):
+    def predictt(self, u, i, inference_mode=False):
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
                      self.r_hat[i, u]
-        if r_u_i_pred > 5:
-            r_u_i_pred = 5
+        if inference_mode:
+            r_u_i_pred = min(r_u_i_pred, 5)
 
         return r_u_i_pred
-
 
     def step(self, e_u_i, u, i):
         # implemented in each of son classes
@@ -249,28 +263,12 @@ def save_model(model, out_file_name):
         np.save(f, model.b_i)
 
 
-if __name__ == '__main__':
-    train, validation = get_data(True, 0.1, 1)
-
-    # hyper param tuning
-    params = {
-        'k': [13, 15, 17, 20],
-        'gamma_u': [0.2, 0.1, 0.3],
-        'gamma_i': [0.3, 0.2, 0.1, 0.4],
-        'gamma_u_b': [0.02, 0.01, 0.1],
-        'gamma_i_b': [0.02, 0.01, 0.1],
-        'lr_u': [0.05, 0.01, 0.005, 0.1],
-        'lr_i': [0.05, 0.01, 0.005, 0.1],
-        'lr_u_b': [0.05, 0.01, 0.005, 0.1],
-        'lr_i_b': [0.05, 0.01, 0.005, 0.1]}
-
+def hyper_param_tuning(model, params):
     trials_num = 10
-    best_valid_rmse = np.inf
-    best_valid_r_2 = np.inf
-    best_valid_mae = np.inf
-    best_model, best_params = None, None
+    best_valid_rmse, best_valid_r_2, best_valid_mae = np.inf, np.inf, np.inf
+    best_model_epochs, best_params = None, None
 
-    #run trials
+    # run trials
     trials_dict = {}
     for trial in range(trials_num):
         print("------------------------------------------------")
@@ -278,29 +276,60 @@ if __name__ == '__main__':
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
 
         print('trial parameters:', trial_params)
-        cur_model = SGD(**trial_params)
+        model.set_hyper_params(**trial_params)
         # fit and update num of epochs in early stop
-        cur_model.fit(train, validation)
-        trials_dict[str(trial)] = (str(cur_model.best_rmse), str(trial_params))
-        print('trial best epoch:', cur_model.early_stop_epoch)
-        print('trial valid rmse of best epoch:', cur_model.best_rmse)
-        print('trial valid r2 of best epoch:', cur_model.r2_valid)
-        print('trial valid mae of best epoch:', cur_model.mae_valid)
+        model.fit(train, validation)
+        trials_dict[str(trial)] = (str(model.best_rmse), str(trial_params))
+        print('trial best epoch:', model.early_stop_epoch)
+        print('trial valid rmse of best epoch:', model.best_rmse)
+        print('trial valid r2 of best epoch:', model.r2_valid)
+        print('trial valid mae of best epoch:', model.mae_valid)
 
         # print('trial rmse:', cur_valid_rmse)
-        if cur_model.best_rmse < best_valid_rmse:
-            best_valid_rmse = cur_model.best_rmse
-            best_valid_r_2 = cur_model.r2_valid
-            best_valid_mae = cur_model.mae_valid
+        if model.best_rmse < best_valid_rmse:
+            best_valid_rmse = model.best_rmse
+            best_valid_r_2 = model.r2_valid
+            best_valid_mae = model.mae_valid
             best_params = trial_params
+            best_model_epochs = model.early_stop_epoch
 
     with open('params_dict.txt', 'w', encoding="utf8") as outfile:
         json.dump(trials_dict, outfile)
 
-    print(best_valid_rmse)
-    print(best_valid_r_2)
-    print(best_valid_mae)
-    # print(best_valid_mpr)
-    print(best_params)
+    return best_params, best_model_epochs, best_valid_rmse, \
+        best_valid_r_2, best_valid_mae
 
 
+if __name__ == '__main__':
+    train, validation = get_data(True, 1, 1)
+    test = get_test()
+    # hyper param tuning
+    best_params_sgd, best_model_epochs_sgd, best_valid_rmse_sgd, \
+        best_valid_r_2_sgd, best_valid_mae_sgd = \
+        hyper_param_tuning(SGD(), SGD_HYPER_PARAMS)
+
+    print('best SGD model rmse:', best_valid_rmse_sgd)
+    print('best SGD model r2:', best_valid_r_2_sgd)
+    print('best SGD model mae:', best_valid_mae_sgd)
+
+    final_model = SGD(**best_params_sgd)
+    final_model.fit_early_stop(train, validation, best_model_epochs_sgd)
+    test['pred'] = pd.apply(lambda row:
+                            final_model.predictt(row[USER_COL],
+                                                 row[ITEM_COL],
+                                                 inference_mode=True))
+
+    best_params_als, best_model_epochs_als, best_valid_rmse_als, \
+        best_valid_r_2_als, best_valid_mae_als = \
+        hyper_param_tuning(SGD(), ALS_HYPER_PARAMS)
+
+    print('best ALS model rmse:', best_valid_rmse_als)
+    print('best ALS model r2:', best_valid_r_2_als)
+    print('best ALS model mae:', best_valid_mae_als)
+
+    final_model = ALS(**best_params_als)
+    final_model.fit_early_stop(train, validation, best_model_epochs_als)
+    test['pred'] = pd.apply(lambda row:
+                            final_model.predictt(row[USER_COL],
+                                                 row[ITEM_COL],
+                                                 inference_mode=True))

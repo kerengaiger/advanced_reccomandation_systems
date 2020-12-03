@@ -28,6 +28,7 @@ class MatrixFactorization:
         self.b_i = None
         self.p_u = None
         self.q_i = None
+        self.r_hat = None
 
         self.current_epoch = None
         self.mu = None
@@ -35,9 +36,9 @@ class MatrixFactorization:
         self.last_epoch_val_loss = np.inf
         self.last_epoch_increase = False
         self.early_stop_epoch = 0
-        self.best_rmse = 0
-        self.r2_valid = 0
-        self.mae_valid = 0
+        self.best_rmse = np.inf
+        self.r2_valid = np.inf
+        self.mae_valid = np.inf
 
     def set_hyper_params(self, k, gamma_u, gamma_i, gamma_u_b,
                  gamma_i_b, lr_u, lr_i,
@@ -81,6 +82,7 @@ class MatrixFactorization:
         self.p_u = np.random.normal(0, 1, (self.n_users, self.k))
         self.q_i = np.random.normal(0, 1, (self.n_items, self.k))
         self.mu = train[:, 2].mean()
+        self.r_hat = np.dot(self.q_i, self.p_u.T)
 
         self.current_epoch = 0
 
@@ -97,16 +99,17 @@ class MatrixFactorization:
 
         while True:
             self.run_epoch(train)
-            self.r_hat = np.dot(self.q_i, self.p_u.T)
-            preds_train = np.array([self.predictt(u, i, inference_mode=True)
+            # self.r_hat = np.dot(self.q_i, self.p_u.T)
+            preds_train = np.array([self.predict(u, i, inference_mode=True)
                                     for u, i in train.values[:, [0, 1]]])
             train_epoch_rmse = np.round(
                 sqrt(self.mse(preds_train, train.values[:, 2])), 4)
 
-            preds_valid = np.array([self.predictt(u, i, inference_mode=True)
+            preds_valid = np.array([self.predict(u, i, inference_mode=True)
                                     for u, i in valid.values[:, [0, 1]]])
             # check for nan valaues
             if preds_valid[0] != preds_valid[0]:
+                self.best_rmse
                 print('problem with hyper-params, nan values were found')
                 break
 
@@ -115,7 +118,8 @@ class MatrixFactorization:
                 self.calc_metrics(valid.values, preds_valid)
             epoch_convergence = {"train rmse": train_epoch_rmse,
                                  "valid_rmse": valid_epoch_rmse,
-                                 "R^2" :  }
+                                 "R^2": valid_epoch_r2,
+                                 "mae":valid_epoch_mae}
             self.record(epoch_convergence)
             if (valid_epoch_rmse >= self.last_epoch_val_loss) and \
                     self.last_epoch_increase:
@@ -145,23 +149,20 @@ class MatrixFactorization:
             np.save(f, self.b_i)
 
     def fit_early_stop(self, train, valid, epochs):
-        self.set_fit_params(train, valid)
-
         full_data = pd.concat([train, validation])
+
+        self.set_fit_params(train.values, valid.values)
         for epoch in range(epochs):
             self.current_epoch = epoch
-            self.run_epoch(full_data)
+            self.run_epoch(full_data.values)
 
-    def predict(self, u, i):
+    def predict(self, u, i, inference_mode=False):
+        # r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
+        #              self.r_hat[i, u]
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
                      self.q_i[i, :].T.dot(self.p_u[u, :])
-        return r_u_i_pred
-
-    def predictt(self, u, i, inference_mode=False):
-        r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
-                     self.r_hat[i, u]
         if inference_mode:
-            r_u_i_pred = min(r_u_i_pred, 5)
+            r_u_i_pred = round(r_u_i_pred)
 
         return r_u_i_pred
 
@@ -176,6 +177,7 @@ class MatrixFactorization:
 
 class SGD(MatrixFactorization):
     def step(self, e_u_i, u, i):
+        # print(e_u_i)
         d_loss_d_qi = -e_u_i * self.p_u[u, :] + self.gamma_i * self.q_i[i, :]
         d_loss_d_pu = -e_u_i * self.q_i[i, :] + self.gamma_u * self.p_u[u, :]
         d_loss_d_bu = -e_u_i + self.gamma_u_b * self.b_u[u]
@@ -188,7 +190,7 @@ class SGD(MatrixFactorization):
 
     def run_epoch(self, train):
         for u, i, r_u_i in train.values:
-            r_u_i_pred = self.predictt(u, i)
+            r_u_i_pred = self.predict(u, i)
             e_u_i = r_u_i - r_u_i_pred
             self.step(e_u_i, u, i)
 
@@ -266,7 +268,7 @@ def save_model(model, out_file_name):
         np.save(f, model.b_i)
 
 
-def hyper_param_tuning(model, params):
+def hyper_param_tuning(method, params):
     trials_num = 10
     best_valid_rmse, best_valid_r_2, best_valid_mae = np.inf, np.inf, np.inf
     best_model_epochs, best_params = None, None
@@ -277,14 +279,16 @@ def hyper_param_tuning(model, params):
         print("------------------------------------------------")
         print("trial number : ", trial)
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
-<<<<<<< HEAD
+
+        if method is 'SGD':
+            model = SGD(**trial_params)
+        else:
+            model = ALS(**trial_params)
         # 0.912
-        trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
-        # trial_params = {'k': 15, 'gamma_u': 0.1, 'gamma_i': 0.1, 'gamma_u_b': 0.02, 'gamma_i_b': 0.1, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
-=======
+        # trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
 
         print('trial parameters:', trial_params)
-        model.set_hyper_params(**trial_params)
+        # model.set_hyper_params(**trial_params)
         # fit and update num of epochs in early stop
         model.fit(train, validation)
         trials_dict[str(trial)] = (str(model.best_rmse), str(trial_params))
@@ -314,7 +318,7 @@ if __name__ == '__main__':
     # hyper param tuning
     best_params_sgd, best_model_epochs_sgd, best_valid_rmse_sgd, \
         best_valid_r_2_sgd, best_valid_mae_sgd = \
-        hyper_param_tuning(SGD(), SGD_HYPER_PARAMS)
+        hyper_param_tuning('SGD', SGD_HYPER_PARAMS)
 
     print('best SGD model rmse:', best_valid_rmse_sgd)
     print('best SGD model r2:', best_valid_r_2_sgd)
@@ -323,13 +327,13 @@ if __name__ == '__main__':
     final_model = SGD(**best_params_sgd)
     final_model.fit_early_stop(train, validation, best_model_epochs_sgd)
     test['pred'] = pd.apply(lambda row:
-                            final_model.predictt(row[USER_COL],
-                                                 row[ITEM_COL],
-                                                 inference_mode=True))
+                            final_model.predict(row[USER_COL],
+                                                row[ITEM_COL],
+                                                inference_mode=True))
 
     best_params_als, best_model_epochs_als, best_valid_rmse_als, \
         best_valid_r_2_als, best_valid_mae_als = \
-        hyper_param_tuning(SGD(), ALS_HYPER_PARAMS)
+        hyper_param_tuning('ALS', ALS_HYPER_PARAMS)
 
     print('best ALS model rmse:', best_valid_rmse_als)
     print('best ALS model r2:', best_valid_r_2_als)
@@ -338,6 +342,6 @@ if __name__ == '__main__':
     final_model = ALS(**best_params_als)
     final_model.fit_early_stop(train, validation, best_model_epochs_als)
     test['pred'] = pd.apply(lambda row:
-                            final_model.predictt(row[USER_COL],
-                                                 row[ITEM_COL],
-                                                 inference_mode=True))
+                            final_model.predict(row[USER_COL],
+                                                row[ITEM_COL],
+                                                inference_mode=True))

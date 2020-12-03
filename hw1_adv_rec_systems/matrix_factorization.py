@@ -42,19 +42,6 @@ class MatrixFactorization:
         self.r2_valid = np.inf
         self.mae_valid = np.inf
 
-    def set_hyper_params(self, k, gamma_u, gamma_i, gamma_u_b,
-                 gamma_i_b, lr_u, lr_i,
-                 lr_u_b, lr_i_b):
-
-        self.k = k  # dimension to represent user/item vectors
-        self.gamma_u = gamma_u
-        self.gamma_i = gamma_i
-        self.gamma_u_b = gamma_u_b
-        self.gamma_i_b = gamma_i_b
-        self.lr_u = lr_u
-        self.lr_i = lr_i
-        self.lr_u_b = lr_u_b
-        self.lr_i_b = lr_i_b
 
     def mse(self, preds, true_values):
         return np.sum(square(np.subtract(true_values, preds))) / true_values.shape[0]
@@ -276,7 +263,6 @@ def hyper_param_tuning(method, params):
         # trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
 
         print('trial parameters:', trial_params)
-        # model.set_hyper_params(**trial_params)
         # fit and update num of epochs in early stop
         model.fit(train, validation)
         trials_dict[str(trial)] = (str(model.best_rmse), str(trial_params))

@@ -109,7 +109,6 @@ class MatrixFactorization:
                                     for u, i in valid.values[:, [0, 1]]])
             # check for nan valaues
             if preds_valid[0] != preds_valid[0]:
-                self.best_rmse
                 print('problem with hyper-params, nan values were found')
                 break
 
@@ -119,7 +118,7 @@ class MatrixFactorization:
             epoch_convergence = {"train rmse": train_epoch_rmse,
                                  "valid_rmse": valid_epoch_rmse,
                                  "R^2": valid_epoch_r2,
-                                 "mae":valid_epoch_mae}
+                                 "mae": valid_epoch_mae}
             self.record(epoch_convergence)
             if (valid_epoch_rmse >= self.last_epoch_val_loss) and \
                     self.last_epoch_increase:
@@ -178,19 +177,27 @@ class MatrixFactorization:
 class SGD(MatrixFactorization):
     def step(self, e_u_i, u, i):
         # print(e_u_i)
-        d_loss_d_qi = -e_u_i * self.p_u[u, :] + self.gamma_i * self.q_i[i, :]
-        d_loss_d_pu = -e_u_i * self.q_i[i, :] + self.gamma_u * self.p_u[u, :]
-        d_loss_d_bu = -e_u_i + self.gamma_u_b * self.b_u[u]
-        d_loss_d_bi = -e_u_i + self.gamma_i_b * self.b_i[i]
+        old_settings = np.seterr(all='raise')
+        try:
+            d_loss_d_qi = -e_u_i * self.p_u[u, :] + self.gamma_i * self.q_i[i, :]
+            d_loss_d_pu = -e_u_i * self.q_i[i, :] + self.gamma_u * self.p_u[u, :]
+            d_loss_d_bu = -e_u_i + self.gamma_u_b * self.b_u[u]
+            d_loss_d_bi = -e_u_i + self.gamma_i_b * self.b_i[i]
 
-        self.b_u[u] = self.b_u[u] - (self.lr_u_b * d_loss_d_bu)
-        self.b_i[i] = self.b_i[i] - (self.lr_i_b * d_loss_d_bi)
-        self.q_i[i] = self.q_i[i] - (self.lr_i * d_loss_d_qi)
-        self.p_u[u] = self.p_u[u] - (self.lr_u * d_loss_d_pu)
+            self.b_u[u] = self.b_u[u] - (self.lr_u_b * d_loss_d_bu)
+            self.b_i[i] = self.b_i[i] - (self.lr_i_b * d_loss_d_bi)
+            self.q_i[i] = self.q_i[i] - (self.lr_i * d_loss_d_qi)
+            self.p_u[u] = self.p_u[u] - (self.lr_u * d_loss_d_pu)
+        except:
+            if e_u_i == np.nan:
+                print(e_u_i)
+                print(np.min(self.p_u[u, :]))
+                print(np.min(self.q_i[i, :]))
 
     def run_epoch(self, train):
         for u, i, r_u_i in train.values:
             r_u_i_pred = self.predict(u, i)
+
             e_u_i = r_u_i - r_u_i_pred
             self.step(e_u_i, u, i)
 

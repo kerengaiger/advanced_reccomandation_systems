@@ -93,8 +93,10 @@ class MatrixFactorization:
             train_epoch_rmse = np.round(sqrt(self.mse(preds_train, train.values[:, 2])), 4)
             valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 4)
             epoch_convergence = {"train rmse": train_epoch_rmse,
-                                 "valid_rmse": valid_epoch_rmse}
+                                 "valid_rmse": valid_epoch_rmse,
+                                 "R^2" :  }
             self.record(epoch_convergence)
+            
             if (valid_epoch_rmse >= self.last_epoch_val_loss) and self.last_epoch_increase:
                 self.early_stop_epoch = self.current_epoch - 2
                 print('early stop! best epochs:', self.early_stop_epoch)
@@ -248,21 +250,21 @@ def save_model(model, out_file_name):
         np.save(f, model.b_i)
 
 if __name__ == '__main__':
-    train, validation = get_data(True,0.1,1)
+    train, validation = get_data(True,1,1)
 
     # hyper param tuning
     params = {
-        'k': [13,15,17,20],
-        'gamma_u':[0.2,0.1,0.3],
-        'gamma_i': [0.3,0.2,0.1,0.4],
-        'gamma_u_b': [0.02,0.01,0.1],
-        'gamma_i_b': [0.02,0.01,0.1],
-        'lr_u': [0.05,0.01,0.005,0.1],
-        'lr_i': [0.05,0.01,0.005,0.1],
-        'lr_u_b': [0.05,0.01,0.005,0.1],
-        'lr_i_b': [0.05,0.01,0.005,0.1]}
+        'k': [12,15,17,15,40],
+        'gamma_u':[0.08,0.1,0.12],
+        'gamma_i': [0.08,0.1,0.12],
+        'gamma_u_b': [0.02,0.06,0.09],
+        'gamma_i_b': [0.1,0.12,0.09],
+        'lr_u': [0.1,0.07,0.13],
+        'lr_i': [0.05,0.01,0.005],
+        'lr_u_b': [0.05,0.01,0.1],
+        'lr_i_b': [0.01,0.005]}
 
-    trials_num = 20
+    trials_num = 25
     best_valid_rmse = np.inf
     best_model, best_params = None, None
     
@@ -272,7 +274,9 @@ if __name__ == '__main__':
         print("------------------------------------------------")
         print("trial number : ",trial)
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
-        # trial_params = {'k': 20, 'gamma_u': 0.3, 'gamma_i': 0.4, 'gamma_u_b': 0.01, 'gamma_i_b': 0.02, 'lr_u': 0.1, 'lr_i': 0.01, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
+        # 0.912
+        trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
+        # trial_params = {'k': 15, 'gamma_u': 0.1, 'gamma_i': 0.1, 'gamma_u_b': 0.02, 'gamma_i_b': 0.1, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
         print('trial parameters:', trial_params)
         cur_model = SGD(**trial_params)
         # fit and update num of epochs in early stop
@@ -293,7 +297,8 @@ if __name__ == '__main__':
         #     best_valid_r_2 = cur_valid_r_2
         #     best_valid_mae = cur_valid_mae
         #     # best_valid_mpr = cur_model_mpr
-        #     best_params = trial_params
+        #     best_params = trial_
+        # params
         if(trial == trials_num-1):
             with open('params_dict.txt', 'w',encoding="utf8") as outfile:
                 json.dump(trials_dict, outfile)
@@ -303,5 +308,7 @@ if __name__ == '__main__':
     print(best_valid_mae)
     # print(best_valid_mpr)
     print(best_params)
+
+
 
 

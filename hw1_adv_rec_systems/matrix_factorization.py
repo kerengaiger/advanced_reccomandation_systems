@@ -1,9 +1,11 @@
+import json
+
 import numpy as np
 import pandas as pd
 from numpy import sqrt, square
-import json
+
 from config import USER_COL, ITEM_COL, RATING_COL, SGD_HYPER_PARAMS, \
-    ALS_HYPER_PARAMS, TEST_OUT_SGD, TEST_OUT_ALS
+    ALS_HYPER_PARAMS
 from utils import get_data, get_test
 
 

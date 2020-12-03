@@ -98,11 +98,13 @@ class MatrixFactorization:
         while True:
             self.run_epoch(train)
             self.r_hat = np.dot(self.q_i, self.p_u.T)
-            preds_train = np.array([self.predictt(u, i) for u, i in train.values[:, [0, 1]]])
+            preds_train = np.array([self.predictt(u, i, inference_mode=True)
+                                    for u, i in train.values[:, [0, 1]]])
             train_epoch_rmse = np.round(
                 sqrt(self.mse(preds_train, train.values[:, 2])), 4)
 
-            preds_valid = np.array([self.predictt(u, i) for u, i in valid.values[:, [0, 1]]])
+            preds_valid = np.array([self.predictt(u, i, inference_mode=True)
+                                    for u, i in valid.values[:, [0, 1]]])
             # check for nan valaues
             if preds_valid[0] != preds_valid[0]:
                 print('problem with hyper-params, nan values were found')

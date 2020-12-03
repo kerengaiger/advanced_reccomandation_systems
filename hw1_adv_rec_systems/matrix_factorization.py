@@ -42,15 +42,7 @@ class MatrixFactorization:
         return np.sum(np.square(np.subtract(true_values, preds))) / true_values.shape[0]
 
     def mae(self, preds, true_values):
-        return np.sum(np.subtract(true_values, preds)) / true_values.shape[0]
-
-    def rmse(self, data):
-        e = 0
-        for row in data:
-            user, item, rating = row
-            e += square(rating - self.predict(user, item))
-        # return np.round(sqrt(e / data.shape[0]), 4)
-        return sqrt(e / data.shape[0])
+        return np.sum(np.absolute(np.subtract(true_values, preds))) / true_values.shape[0]
 
     def record(self, covn_dict):
         epoch = "{:02d}".format(self.current_epoch)
@@ -149,7 +141,10 @@ class MatrixFactorization:
 
     def predictt(self, u, i):
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
-                     self.r_hat[i,u]
+                     self.r_hat[i, u]
+        if r_u_i_pred > 5:
+            r_u_i_pred = 5
+
         return r_u_i_pred
 
 
@@ -271,6 +266,8 @@ if __name__ == '__main__':
 
     trials_num = 10
     best_valid_rmse = np.inf
+    best_valid_r_2 = np.inf
+    best_valid_mae = np.inf
     best_model, best_params = None, None
 
     #run trials
@@ -279,7 +276,7 @@ if __name__ == '__main__':
         print("------------------------------------------------")
         print("trial number : ", trial)
         trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
-        # trial_params = {'k': 20, 'gamma_u': 0.3, 'gamma_i': 0.4, 'gamma_u_b': 0.01, 'gamma_i_b': 0.02, 'lr_u': 0.1, 'lr_i': 0.01, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
+
         print('trial parameters:', trial_params)
         cur_model = SGD(**trial_params)
         # fit and update num of epochs in early stop
@@ -290,24 +287,14 @@ if __name__ == '__main__':
         print('trial valid r2 of best epoch:', cur_model.r2_valid)
         print('trial valid mae of best epoch:', cur_model.mae_valid)
 
-        # refit according to num of epochs
-        # cur_model.fit_early_stop(train, validation)
-        # cur_preds = np.array([cur_model.predict(u, i) for u, i in validation.values[:, [0, 1]]])
-        # cur_valid_mse = cur_model.mse(cur_preds, validation[:, 2])
-        # cur_valid_rmse = sqrt(cur_valid_mse)
-        # cur_valid_r_2 = 1 - cur_valid_mse / np.var(validation[:, 2])
-        # cur_valid_mae = cur_model.mae(cur_preds, validation[:, 2])
-        # cur_model_mpr = cur_model.mpr(validation.values)
-
         # print('trial rmse:', cur_valid_rmse)
-        # if cur_valid_rmse < best_valid_rmse:
-        #     best_valid_rmse = cur_valid_rmse
-        #     best_valid_r_2 = cur_valid_r_2
-        #     best_valid_mae = cur_valid_mae
-        #     # best_valid_mpr = cur_model_mpr
-        #     best_params = trial_params
+        if cur_model.best_rmse < best_valid_rmse:
+            best_valid_rmse = cur_model.best_rmse
+            best_valid_r_2 = cur_model.r2_valid
+            best_valid_mae = cur_model.mae_valid
+            best_params = trial_params
 
-    with open('params_dict.txt', 'w',encoding="utf8") as outfile:
+    with open('params_dict.txt', 'w', encoding="utf8") as outfile:
         json.dump(trials_dict, outfile)
 
     print(best_valid_rmse)

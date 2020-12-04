@@ -30,7 +30,7 @@ class MatrixFactorization:
         self.b_i = None
         self.p_u = None
         self.q_i = None
-        self.r_hat = None
+        # self.r_hat = None
 
         self.current_epoch = None
         self.mu = None
@@ -41,7 +41,6 @@ class MatrixFactorization:
         self.best_rmse = np.inf
         self.r2_valid = np.inf
         self.mae_valid = np.inf
-
 
     def mse(self, preds, true_values):
         return np.sum(square(np.subtract(true_values, preds))) / true_values.shape[0]
@@ -63,15 +62,12 @@ class MatrixFactorization:
     def set_fit_params(self, train, valid):
         self.n_users = max(train[:, 0].max(), valid[:, 0].max()) + 1
         self.n_items = max(train[:, 1].max(), valid[:, 1].max()) + 1
-        self.b_u = np.zeros(self.n_users)
-        # self.b_u = np.random.normal(0, 1, self.n_users)
-        self.b_i = np.zeros(self.n_items)
-        # self.b_i = np.random.normal(0, 1, self.n_items)
-        # self.p_u = np.zeros((self.n_users, self.k))
-        self.p_u = np.random.normal(0, 1, (self.n_users, self.k))
-        self.q_i = np.random.normal(0, 1, (self.n_items, self.k))
+        self.b_u = np.zeros(self.n_users, dtype='float64')
+        self.b_i = np.zeros(self.n_items, dtype='float64')
+        self.p_u = np.random.rand(self.n_users, self.k) * 0.1
+        self.q_i = np.random.rand(self.n_items, self.k) * 0.1
         self.mu = train[:, 2].mean()
-        self.r_hat = np.dot(self.q_i, self.p_u.T)
+        # self.r_hat = np.dot(self.q_i, self.p_u.T)
 
         self.current_epoch = 0
 
@@ -101,7 +97,6 @@ class MatrixFactorization:
                 print('problem with hyper-params, nan values were found')
                 break
 
-            # valid_epoch_rmse = np.round(sqrt(self.mse(preds_valid, valid.values[:, 2])), 4)
             valid_epoch_rmse, valid_epoch_r2, valid_epoch_mae = \
                 self.calc_metrics(valid.values, preds_valid)
             epoch_convergence = {"train rmse": train_epoch_rmse,
@@ -135,8 +130,6 @@ class MatrixFactorization:
             self.run_epoch(full_data.values)
 
     def predict(self, u, i, inference_mode=False):
-        # r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
-        #              self.r_hat[i, u]
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
                      self.q_i[i, :].T.dot(self.p_u[u, :])
         if inference_mode:
@@ -155,30 +148,32 @@ class MatrixFactorization:
 
 class SGD(MatrixFactorization):
     def step(self, e_u_i, u, i):
-        # print(e_u_i)
-        old_settings = np.seterr(all='raise')
-        try:
-            d_loss_d_qi = -e_u_i * self.p_u[u, :] + self.gamma_i * self.q_i[i, :]
-            d_loss_d_pu = -e_u_i * self.q_i[i, :] + self.gamma_u * self.p_u[u, :]
-            d_loss_d_bu = -e_u_i + self.gamma_u_b * self.b_u[u]
-            d_loss_d_bi = -e_u_i + self.gamma_i_b * self.b_i[i]
+        # old_settings = np.seterr(all='raise')
+        self.p_u[u, :] += self.lr_u * (
+                e_u_i * self.q_i[i, :] - self.gamma_u * self.p_u[u, :])
 
-            self.b_u[u] = self.b_u[u] - (self.lr_u_b * d_loss_d_bu)
-            self.b_i[i] = self.b_i[i] - (self.lr_i_b * d_loss_d_bi)
-            self.q_i[i] = self.q_i[i] - (self.lr_i * d_loss_d_qi)
-            self.p_u[u] = self.p_u[u] - (self.lr_u * d_loss_d_pu)
-        except:
-            if e_u_i == np.nan:
-                print(e_u_i)
-                print(np.min(self.p_u[u, :]))
-                print(np.min(self.q_i[i, :]))
+        self.q_i[i, :] += self.lr_i * (
+                e_u_i * self.p_u[u, :] - self.gamma_u * self.q_i[i, :])
+
+        self.b_u[u] += self.lr_u_b * (
+            e_u_i - self.gamma_u_b * self.b_u[u])
+
+        self.b_i[i] += self.lr_i_b * (
+            e_u_i - self.gamma_i_b * self.b_i[i])
 
     def run_epoch(self, train):
         for u, i, r_u_i in train.values:
             r_u_i_pred = self.predict(u, i)
-
             e_u_i = r_u_i - r_u_i_pred
+            # if u == 4 and i == 390:
+            #     print('predict for user 4 and item 390', r_u_i_pred)
+            #     print('error for user 4 and item 390', e_u_i)
             self.step(e_u_i, u, i)
+            # if u == 4 and i == 390:
+            #     r_u_i_pred = self.predict(u, i)
+            #     e_u_i = r_u_i - r_u_i_pred
+            #     print('predict for user 4 and item 390', r_u_i_pred)
+            #     print('error for user 4 and item 390', e_u_i)
 
         # exponential decay
         self.lr_i = 0.9 * self.lr_i
@@ -261,7 +256,9 @@ def hyper_param_tuning(method, params):
             model = ALS(**trial_params)
         # 0.912
         # trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
-
+        # trial_params = {'k': 15, 'gamma_u': 0.001, 'gamma_i': 0.001, 'gamma_u_b': 0.001,
+        #  'gamma_i_b': 0.001, 'lr_u': 0.001, 'lr_i': 0.001, 'lr_u_b': 0.001,
+        #  'lr_i_b': 0.005}
         print('trial parameters:', trial_params)
         # fit and update num of epochs in early stop
         model.fit(train, validation)

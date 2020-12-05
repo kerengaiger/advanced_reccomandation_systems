@@ -5,7 +5,7 @@ import pandas as pd
 from numpy import sqrt, square
 
 from config import USER_COL, ITEM_COL, RATING_COL, SGD_HYPER_PARAMS, \
-    ALS_HYPER_PARAMS
+    ALS_HYPER_PARAMS, TEST_OUT_SGD, TEST_OUT_ALS
 from utils import get_data, get_test
 
 
@@ -127,7 +127,7 @@ class MatrixFactorization:
         self.set_fit_params(train.values, valid.values)
         for epoch in range(epochs):
             self.current_epoch = epoch
-            self.run_epoch(full_data.values)
+            self.run_epoch(full_data)
 
     def predict(self, u, i, inference_mode=False):
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
@@ -297,11 +297,13 @@ if __name__ == '__main__':
 
     final_model = SGD(**best_params_sgd)
     final_model.fit_early_stop(train, validation, best_model_epochs_sgd)
-    test['pred'] = pd.apply(lambda row:
-                            final_model.predict(row[USER_COL],
-                                                row[ITEM_COL],
-                                                inference_mode=True))
-
+    print(test.head())
+    test[[USER_COL, ITEM_COL]] = test.apply(lambda col: col + 1)
+    test['pred'] = test.apply(lambda row:
+                              final_model.predict(row[USER_COL],
+                                                  row[ITEM_COL],
+                                                  inference_mode=True))
+    test.to_csv(TEST_OUT_SGD)
     best_params_als, best_model_epochs_als, best_valid_rmse_als, \
         best_valid_r_2_als, best_valid_mae_als = \
         hyper_param_tuning('ALS', ALS_HYPER_PARAMS)
@@ -312,7 +314,9 @@ if __name__ == '__main__':
 
     final_model = ALS(**best_params_als)
     final_model.fit_early_stop(train, validation, best_model_epochs_als)
-    test['pred'] = pd.apply(lambda row:
-                            final_model.predict(row[USER_COL],
-                                                row[ITEM_COL],
-                                                inference_mode=True))
+    test['pred'] = test.apply(lambda row:
+                              final_model.predict(row[USER_COL],
+                                                  row[ITEM_COL],
+                                                  inference_mode=True))
+    test[[USER_COL, ITEM_COL]] = test.apply(lambda col: col + 1)
+    test.to_csv(TEST_OUT_ALS)

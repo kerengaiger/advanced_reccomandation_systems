@@ -302,7 +302,7 @@ if __name__ == '__main__':
     test['pred'] = test.apply(lambda row:
                               final_model.predict(row[USER_COL],
                                                   row[ITEM_COL],
-                                                  inference_mode=True))
+                                                  inference_mode=True), axis=1)
     test.to_csv(TEST_OUT_SGD)
     best_params_als, best_model_epochs_als, best_valid_rmse_als, \
         best_valid_r_2_als, best_valid_mae_als = \
@@ -317,6 +317,6 @@ if __name__ == '__main__':
     test['pred'] = test.apply(lambda row:
                               final_model.predict(row[USER_COL],
                                                   row[ITEM_COL],
-                                                  inference_mode=True))
+                                                  inference_mode=True), axis=1)
     test[[USER_COL, ITEM_COL]] = test.apply(lambda col: col + 1)
     test.to_csv(TEST_OUT_ALS)

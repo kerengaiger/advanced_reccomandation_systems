@@ -298,12 +298,14 @@ if __name__ == '__main__':
     final_model = SGD(**best_params_sgd)
     final_model.fit_early_stop(train, validation, best_model_epochs_sgd)
     print(test.head())
-    test[[USER_COL, ITEM_COL]] = test.apply(lambda col: col + 1)
+
     test['pred'] = test.apply(lambda row:
                               final_model.predict(row[USER_COL],
                                                   row[ITEM_COL],
                                                   inference_mode=True), axis=1)
+    test[[USER_COL, ITEM_COL]] = test[[USER_COL, ITEM_COL]].apply(lambda col: col + 1)
     test.to_csv(TEST_OUT_SGD)
+
     best_params_als, best_model_epochs_als, best_valid_rmse_als, \
         best_valid_r_2_als, best_valid_mae_als = \
         hyper_param_tuning('ALS', ALS_HYPER_PARAMS)
@@ -318,5 +320,5 @@ if __name__ == '__main__':
                               final_model.predict(row[USER_COL],
                                                   row[ITEM_COL],
                                                   inference_mode=True), axis=1)
-    test[[USER_COL, ITEM_COL]] = test.apply(lambda col: col + 1)
+    test[[USER_COL, ITEM_COL]] = test[[USER_COL, ITEM_COL]].apply(lambda col: col + 1)
     test.to_csv(TEST_OUT_ALS)

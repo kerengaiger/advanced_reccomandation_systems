@@ -1,3 +1,4 @@
+import numpy as np
 TRAIN_PATH = "data/Train.csv"
 VALIDATION_PATH = "data/Validation.csv"
 TEST_PATH = 'data/Test.csv'
@@ -24,18 +25,18 @@ SGD_PARAMS_OUT = 'sgd'
 #         'lr_u_b': [0.005, 0.05, 0.01, 0.1],
 #         'lr_i_b': [0.01, 0.005, 0.1]}
 
-SGD_HYPER_PARAMS = {
-        'k': [10, 20, 50, 100],
-        'gamma_u': [0.001, 0.005, 0.01],
-        'gamma_i': [0.01, 0.05, 0.1],
-        'gamma_u_b': [0.001, 0.005, 0.01],
-        'gamma_i_b': [0.01, 0.05, 0.1],
-        'lr_u': [0.01, 0.05, 0.1],
-        'lr_i': [0.001, 0.005, 0.01],
-        'lr_u_b': [0.01, 0.05, 0.1],
-        'lr_i_b': [0.001, 0.005, 0.01]}
-
-ALS_HYPER_PARAMS = {'k': [13, 15, 17, 20],
+# SGD_HYPER_PARAMS = {
+#         'k': [50, 100],
+#         'gamma_u': np.logspace(0.05, 0.2, num=1000),
+#         'gamma_i': np.logspace(0.05, 0.2, num=1000),
+#         'gamma_u_b': np.logspace(0.05, 0.2, num=1000),
+#         'gamma_i_b': np.logspace(0.05, 0.2, num=1000),
+#         'lr_u': np.logspace(0.05, 0.2, num=1000),
+#         'lr_i': np.logspace(0.05, 0.2, num=1000),
+#         'lr_u_b': np.logspace(0.05, 0.2, num=1000),
+#         'lr_i_b': np.logspace(0.05, 0.2, num=1000)}
+#
+SGD_HYPER_PARAMS = {'k': [50, 100, 150],
                     'gamma_u': [0.2, 0.1, 0.3],
                     'gamma_i': [0.3, 0.2, 0.1, 0.4],
                     'gamma_u_b': [0.02, 0.01, 0.1],
@@ -44,6 +45,12 @@ ALS_HYPER_PARAMS = {'k': [13, 15, 17, 20],
                     'lr_i': [0.05, 0.01, 0.005, 0.1],
                     'lr_u_b': [0.05, 0.01, 0.005, 0.1],
                     'lr_i_b': [0.05, 0.01, 0.005, 0.1]}
+
+ALS_HYPER_PARAMS = {'k': [50, 100, 150],
+                    'gamma_u': [0.2, 0.1, 0.3],
+                    'gamma_i': [0.3, 0.2, 0.1, 0.4],
+                    'gamma_u_b': [0.05, 0.1, 0.2],
+                    'gamma_i_b': [0.05, 0.1, 0.2]}
 
 TEST_OUT_SGD = 'test_preds_sgd.csv'
 TEST_OUT_ALS = 'test_preds_als.csv'

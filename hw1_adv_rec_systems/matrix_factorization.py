@@ -7,7 +7,9 @@ from numpy import sqrt, square
 from config import USER_COL, ITEM_COL, RATING_COL, SGD_HYPER_PARAMS, \
     ALS_HYPER_PARAMS, TEST_OUT_SGD, TEST_OUT_ALS
 from utils import get_data, get_test
-
+import multiprocessing
+from functools import partial
+import functools
 
 class MatrixFactorization:
 
@@ -67,7 +69,6 @@ class MatrixFactorization:
         self.p_u = np.random.rand(self.n_users, self.k) * 0.1
         self.q_i = np.random.rand(self.n_items, self.k) * 0.1
         self.mu = train[:, 2].mean()
-        # self.r_hat = np.dot(self.q_i, self.p_u.T)
 
         self.current_epoch = 0
 
@@ -128,13 +129,34 @@ class MatrixFactorization:
         for epoch in range(epochs):
             self.current_epoch = epoch
             self.run_epoch(full_data)
+            preds = np.array([self.predict(u, i)
+                                    for u, i in full_data.values[:, [0, 1]]])
+            data_epoch_rmse = \
+                sqrt(self.mse(preds, full_data.values[:, 2]))
+
+            epoch_convergence = {"data rmse": data_epoch_rmse}
+            self.record(epoch_convergence)
+
+    def calc_regularization(self):
+        return self.gamma_u_b * (np.sum(self.b_u ** 2)) + \
+               self.gamma_i_b * (np.sum(self.b_i ** 2)) + \
+               self.gamma_u * (np.sum(np.linalg.norm(self.p_u, axis=1) ** 2)) + \
+               self.gamma_i * (np.sum(np.linalg.norm(self.q_i, axis=1) ** 2))
+
+    def check_err_and_obj(self, train,txt):
+        preds_train = np.array([self.predict(u, i)
+                                for u, i in train.values[:, [0, 1]]])
+        err = self.mse(preds_train, train.values[:, 2]) * train.shape[0]
+        print(f'{txt} err:', err)
+        regularization = self.calc_regularization()
+        obj = err + regularization
+        print(f'{txt} obj:', obj)
 
     def predict(self, u, i, inference_mode=False):
         r_u_i_pred = self.mu + self.b_u[u] + self.b_i[i] + \
                      self.q_i[i, :].T.dot(self.p_u[u, :])
         r_u_i_pred = min(r_u_i_pred, 5)
         if inference_mode:
-            print(u, i)
             r_u_i_pred = round(r_u_i_pred)
 
         return r_u_i_pred
@@ -146,6 +168,20 @@ class MatrixFactorization:
     def run_epoch(self, train):
         # implemented in each of son classes
         pass
+
+    def save_model(self, method):
+        np.save(method + '_p_u.npy', self.p_u)
+        np.save(method + '_q_i.npy', self.q_i)
+        np.save(method + '_b_u.npy', self.b_u)
+        np.save(method + '_b_i.npy', self.b_i)
+
+    def load_best(self, train, validation):
+        full_data = pd.concat([train, validation])
+        self.mu = full_data.values[:, 2].mean()
+        self.b_u = np.load('b_u.npy')
+        self.b_i = np.load('b_i.npy')
+        self.p_u = np.load('p_u.npy')
+        self.q_i = np.load('q_i.npy')
 
 
 class SGD(MatrixFactorization):
@@ -167,15 +203,17 @@ class SGD(MatrixFactorization):
         for u, i, r_u_i in train.values:
             r_u_i_pred = self.predict(u, i)
             e_u_i = r_u_i - r_u_i_pred
-            # if u == 4 and i == 390:
-            #     print('predict for user 4 and item 390', r_u_i_pred)
-            #     print('error for user 4 and item 390', e_u_i)
+            if r_u_i_pred > 100:
+                print(np.max(self.p_u))
+                print(np.min(self.p_u))
+                print(np.max(self.q_i))
+                print(np.min(self.q_i))
             self.step(e_u_i, u, i)
-            # if u == 4 and i == 390:
-            #     r_u_i_pred = self.predict(u, i)
-            #     e_u_i = r_u_i - r_u_i_pred
-            #     print('predict for user 4 and item 390', r_u_i_pred)
-            #     print('error for user 4 and item 390', e_u_i)
+            if r_u_i_pred > 100:
+                print(np.max(self.p_u))
+                print(np.min(self.p_u))
+                print(np.max(self.q_i))
+                print(np.min(self.q_i))
 
         # exponential decay
         self.lr_i = 0.9 * self.lr_i
@@ -185,24 +223,39 @@ class SGD(MatrixFactorization):
 
 
 class ALS(MatrixFactorization):
+    def update_user_params(self, train, u):
+        a = 0
+        sum_i_mat = np.zeros((self.k, self.k))
+        sum_i_vec = np.zeros((self.k, 1))
+        for i, r_u_i in train[train[USER_COL] == u][
+            [ITEM_COL, RATING_COL]].values:
+            a += r_u_i - self.mu - self.b_i[i] - self.p_u[u].dot(self.q_i[i].T)
+            q_i = np.expand_dims(self.q_i[i, :], axis=1)
+            i_mat = q_i.dot(q_i.T)
+            sum_i_mat = np.add(sum_i_mat, i_mat)
+            i_vec = (r_u_i - self.mu - self.b_u[u] - self.b_i[i]) * q_i
+            sum_i_vec = np.add(sum_i_vec, i_vec)
+        l = np.add(sum_i_mat, self.gamma_u * np.identity(self.k))
+        r = sum_i_vec
+        self.p_u[u, :] = np.squeeze(np.dot(np.linalg.inv(l), r))
+        self.b_u[u] = a / (train[train[USER_COL] == u].shape[0] +
+                           self.gamma_u_b)
+
+    def update_users(self, train):
+        a_pool = multiprocessing.Pool()
+        users = list(train[USER_COL].unique())
+        func = partial(self.update_user_params, train)
+        result = a_pool.map(func, users)
+
     def update_b_u(self, train):
         for u in train[USER_COL].unique():
             a = 0
             for i, r_u_i in train[train[USER_COL] == u][
                                   [ITEM_COL, RATING_COL]].values:
                 a += r_u_i - self.mu - self.b_i[i] - self.p_u[u].dot(self.q_i[i].T)
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj before bu update:', train_epoch_rmse)
+
             self.b_u[u] = a / (train[train[USER_COL] == u].shape[0] +
                                self.gamma_u_b)
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj after bu update:', train_epoch_rmse)
 
     def update_p_u(self, train):
         for u in train[USER_COL].unique():
@@ -217,17 +270,33 @@ class ALS(MatrixFactorization):
                 sum_i_vec = np.add(sum_i_vec, i_vec)
             a = np.add(sum_i_mat, self.gamma_u * np.identity(self.k))
             b = sum_i_vec
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj before pu update:', train_epoch_rmse)
             self.p_u[u, :] = np.squeeze(np.dot(np.linalg.inv(a), b))
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj after pu update:', train_epoch_rmse)
+
+    def update_item_params(self, train, i):
+        a = 0
+        sum_u_mat = np.zeros((self.k, self.k))
+        sum_u_vec = np.zeros((self.k, 1))
+        for u, r_u_i in train[train[ITEM_COL] == i][
+            [USER_COL, RATING_COL]].values:
+            a += r_u_i - self.mu - self.b_u[u] - self.p_u[u].dot(
+                self.q_i[i].T)
+            p_u = np.expand_dims(self.p_u[u, :], axis=1)
+            u_mat = p_u.dot(p_u.T)
+            sum_u_mat = np.add(sum_u_mat, u_mat)
+            u_vec = (r_u_i - self.mu - self.b_u[u] - self.b_i[i]) * p_u
+            sum_u_vec = np.add(sum_u_vec, u_vec)
+
+        l = np.add(sum_u_mat, self.gamma_i * np.identity(self.k))
+        r = sum_u_vec
+        self.q_i[i, :] = np.squeeze(np.dot(np.linalg.inv(l), r))
+        self.b_i[i] = a / (train[train[ITEM_COL] == i].shape[0] +
+                           self.gamma_i_b)
+
+    def update_items(self, train):
+        a_pool = multiprocessing.Pool()
+        items = list(train[ITEM_COL].unique())
+        func = partial(self.update_item_params, train)
+        result = a_pool.map(func, items)
 
     def update_b_i(self, train):
         for i in train[ITEM_COL].unique():
@@ -235,19 +304,8 @@ class ALS(MatrixFactorization):
             for u, r_u_i in train[train[ITEM_COL] == i][
                                   [USER_COL, RATING_COL]].values:
                 a += r_u_i - self.mu - self.b_u[u] - self.p_u[u].dot(self.q_i[i].T)
-
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj before bi update:', train_epoch_rmse)
             self.b_i[i] = a / (train[train[ITEM_COL] == i].shape[0] +
                                self.gamma_i_b)
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj after bi update:', train_epoch_rmse)
 
     def update_q_i(self, train):
         for i in train[ITEM_COL].unique():
@@ -262,30 +320,20 @@ class ALS(MatrixFactorization):
                 sum_u_vec = np.add(sum_u_vec, u_vec)
             a = np.add(sum_u_mat, self.gamma_i * np.identity(self.k))
             b = sum_u_vec
-
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj before qi update:', train_epoch_rmse)
             self.q_i[i, :] = np.squeeze(np.dot(np.linalg.inv(a), b))
-            preds_train = np.array([self.predict(u, i)
-                                    for u, i in train.values[:, [0, 1]]])
-            train_epoch_rmse = np.round(
-                sqrt(self.mse(preds_train, train.values[:, 2])), 4)
-            print('train obj after qi update:', train_epoch_rmse)
 
     def run_epoch(self, train):
-        self.update_b_u(train)
         self.update_b_i(train)
+        self.update_b_u(train)
         self.update_p_u(train)
         self.update_q_i(train)
+        # self.update_users(train)
+        # self.update_items(train)
 
 
 def hyper_param_tuning(method, params):
-    trials_num = 1
+    trials_num = 10
     best_valid_rmse, best_valid_r_2, best_valid_mae = np.inf, np.inf, np.inf
-    best_model_epochs, best_params = None, None
 
     # run trials
     trials_dict = {}
@@ -298,72 +346,68 @@ def hyper_param_tuning(method, params):
             model = SGD(**trial_params)
         else:
             model = ALS(**trial_params)
-        # 0.912
-        trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12, 'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1, 'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
-        # trial_params = {'k': 15, 'gamma_u': 0.001, 'gamma_i': 0.001, 'gamma_u_b': 0.001,
-        #  'gamma_i_b': 0.001, 'lr_u': 0.001, 'lr_i': 0.001, 'lr_u_b': 0.001,
-        #  'lr_i_b': 0.005}
+        if method == 'SGD':
+            trial_params = {'k': 15, 'gamma_u': 0.08, 'gamma_i': 0.12,
+                            'gamma_u_b': 0.02, 'gamma_i_b': 0.12, 'lr_u': 0.1,
+                            'lr_i': 0.05, 'lr_u_b': 0.05, 'lr_i_b': 0.005}
+
         print('trial parameters:', trial_params)
         # fit and update num of epochs in early stop
         model.fit(train, validation)
-        trials_dict[str(trial)] = (str(model.best_rmse), str(trial_params))
-        print('trial best epoch:', model.early_stop_epoch)
-        print('trial valid rmse of best epoch:', model.best_rmse)
-        print('trial valid r2 of best epoch:', model.r2_valid)
-        print('trial valid mae of best epoch:', model.mae_valid)
 
-        # print('trial rmse:', cur_valid_rmse)
         if model.best_rmse < best_valid_rmse:
             best_valid_rmse = model.best_rmse
             best_valid_r_2 = model.r2_valid
             best_valid_mae = model.mae_valid
-            best_params = trial_params
-            best_model_epochs = model.early_stop_epoch
+
+        print('trial valid rmse of best epoch:', model.best_rmse)
+        print('trial valid r2 of best epoch:', model.r2_valid)
+        print('trial valid mae of best epoch:', model.mae_valid)
 
     with open('params_dict.txt', 'w', encoding="utf8") as outfile:
         json.dump(trials_dict, outfile)
 
-    return best_params, best_model_epochs, best_valid_rmse, \
-        best_valid_r_2, best_valid_mae
+    return best_valid_rmse, best_valid_r_2, best_valid_mae
+
+
+def print_types(u,i):
+    print(u,i)
+    print(type(u), type(i))
 
 
 if __name__ == '__main__':
     train, validation = get_data(True, 1, 1)
     test = get_test()
-    ###########SGD#################################
-    # best_params_sgd, best_model_epochs_sgd, best_valid_rmse_sgd, \
-    #     best_valid_r_2_sgd, best_valid_mae_sgd = \
+    ######################################SGD#################################
+    # best_valid_rmse_sgd, best_valid_r_2_sgd, best_valid_mae_sgd = \
     #     hyper_param_tuning('SGD', SGD_HYPER_PARAMS)
     #
     # print('best SGD model rmse:', best_valid_rmse_sgd)
     # print('best SGD model r2:', best_valid_r_2_sgd)
     # print('best SGD model mae:', best_valid_mae_sgd)
     #
-    # final_model = SGD(**best_params_sgd)
-    # final_model.fit_early_stop(train, validation, best_model_epochs_sgd)
-    # print(test.head())
-    #
+    # final_model = SGD()
+    # final_model.load_best(train, validation)
     # test['pred'] = test.apply(lambda row:
     #                           final_model.predict(row[USER_COL],
-    #                                               row[ITEM_COL],
-    #                                               inference_mode=True), axis=1)
+    #                                               row[ITEM_COL]), axis=1)
     # test[[USER_COL, ITEM_COL]] = test[[USER_COL, ITEM_COL]].apply(lambda col: col + 1)
+    # print(test.head())
     # test.to_csv(TEST_OUT_SGD)
 
-    ########### ALS #################################
-    best_params_als, best_model_epochs_als, best_valid_rmse_als, \
-        best_valid_r_2_als, best_valid_mae_als = \
+    #####################################ALS###################################
+    best_valid_rmse_als, best_valid_r_2_als, best_valid_mae_als = \
         hyper_param_tuning('ALS', ALS_HYPER_PARAMS)
 
     print('best ALS model rmse:', best_valid_rmse_als)
     print('best ALS model r2:', best_valid_r_2_als)
     print('best ALS model mae:', best_valid_mae_als)
 
-    final_model = ALS(**best_params_als)
-    final_model.fit_early_stop(train, validation, best_model_epochs_als)
+    final_model = ALS()
+    final_model.load_best(train, validation)
+
     test['pred'] = test.apply(lambda row:
                               final_model.predict(row[USER_COL],
-                                                  row[ITEM_COL],
-                                                  inference_mode=True), axis=1)
+                                                  row[ITEM_COL]), axis=1)
     test[[USER_COL, ITEM_COL]] = test[[USER_COL, ITEM_COL]].apply(lambda col: col + 1)
     test.to_csv(TEST_OUT_ALS)

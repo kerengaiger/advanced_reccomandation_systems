@@ -32,5 +32,5 @@ ALS_HYPER_PARAMS = {'k': [10, 15, 20],
                     'gamma_i_b': np.logspace(-1.5, 0, num=1000)}
 
 
-TEST_OUT_SGD = 'test_preds_sgd_new.csv'
-TEST_OUT_ALS = 'test_preds_als_new_new.csv'
+TEST_OUT_SGD = 'test_preds_sgd.csv'
+TEST_OUT_ALS = 'test_preds_als.csv'

@@ -119,7 +119,7 @@ class BPR:
         with open(path_out_u, 'rb') as f:
             self.users = np.load(f, self.users)
         with open(path_out_i, 'rb') as f:
-            self.items = np.load(f, self.users)
+            self.items = np.load(f, self.items)
 
     def fit(self, S_train, S_valid):
         best_auc_valid = 0

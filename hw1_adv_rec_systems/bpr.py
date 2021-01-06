@@ -231,7 +231,7 @@ def rank_items(u, i_lst, S_full, users_arr, items_arr):
     j_dict = dict(zip(j_lst, j_preds))
     i_preds = users_arr[u].dot(items_arr[i_lst].T)
     i_dict = dict(zip(i_lst, i_preds))
-    j_dict = j_dict.update(i_dict)
+    j_dict.update(i_dict)
 
     rank_k_items = sorted(j_dict.items(),
                           key=itemgetter(1),

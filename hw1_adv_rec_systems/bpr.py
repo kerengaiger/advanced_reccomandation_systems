@@ -289,7 +289,7 @@ def split_data(data):
     S_unobserved = data.groupby('UserID').ItemID.apply(
         lambda x: x.sample(n=1)).reset_index()[['UserID', 'ItemID']]
     S_unobserved['unobserved'] = True
-    merged = pd.merge(train, S_unobserved, left_on=['UserID', 'ItemID'],
+    merged = pd.merge(data, S_unobserved, left_on=['UserID', 'ItemID'],
                       right_on=['UserID', 'ItemID'], how='left')
     S_observed = merged[merged['unobserved'].isnull()][['UserID', 'ItemID']]
     S_unobserved = S_unobserved[['UserID', 'ItemID']]

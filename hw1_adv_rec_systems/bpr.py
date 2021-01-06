@@ -11,17 +11,18 @@ from operator import itemgetter
 
 class BPR:
     def __init__(self, k=15, lr_u=0.01, lr_i=0.01,
-                 lr_j=0.01, n_users=0, n_items=0):
+                 lr_j=0.01, n_users=0, n_items=0,sample_method='Uniform',max_epochs=100):
         self.k = k  # dimension to represent user/item vectors
         self.lr_u = lr_u
         self.lr_i = lr_i
         self.lr_j = lr_j
-        self.users = np.random.rand(n_users + 1, self.k) * 0.1
-        self.items = np.random.rand(n_items + 1, self.k) * 0.1
+        self.users = np.random.rand(n_users + 1, self.k) * 1 #TODO speak with Karen, the vectors dimentation are opposite to the formulas
+        self.items = np.random.rand(n_items + 1, self.k) * 1
         self.early_stop_epoch = None
+        self.max_epochs=max_epochs
         self.current_epoch = 0
         self.item_popularity = []
-        self.sample_method = None
+        self.sample_method = sample_method
 
     def step(self, u, i, j, e_u_i_j):
         self.users[u] += self.lr_u * (
@@ -60,6 +61,62 @@ class BPR:
     #         # e_u_i_j = 1 - pred
     #         # print('error after', e_u_i_j)
 
+    def run_epoch_2(self,mspu=1,train_list=[]):
+        def calc_likelihood_u(u, i, j, users, items):
+            res = users[u].dot(items[[i, j]].T)
+            diff = res[0] - res[1]
+            pred = 1 / (1 + np.exp(-diff))
+            return pred
+
+        print(1)
+        trained = []
+        for u,pos,neg in tqdm(train_list): #we iterate on the users
+            # print (u)
+            # some edge cases:
+            # 1. we can have a case where len(neg) < len(pos), here we extend the list
+            if len(neg)<len(pos):
+                neg=self._extend_neg(neg,len(pos))
+            # 2. I defined the mspu to 1 to have a fair run time check
+            # we align to the list size if the number of postive session is lower than the max
+            rmspu=min(mspu,len(pos))
+
+            for idx,i in enumerate(pos[:rmspu]): # we iterate on the positive samples
+                # print(i)
+                j=neg[idx]
+                trained.append((u, i, j))
+                pred = self.sigmoid(self.predict(u, i, j))
+                e_u_i_j=1-pred
+                self.step(u, i, j, e_u_i_j)
+        likelihood_u_lst=0
+        # print('calc likelihood of train:')
+        # f_partial = functools.partial(calc_likelihood_u,
+        #                               users=self.users,
+        #                               items=self.items)
+        #
+        # likelihood_u_lst = Parallel(n_jobs=-1)(
+        #     delayed(f_partial)(u, i, j) for u, i, j in trained)
+
+        return likelihood_u_lst
+
+    def sigmoid(self,x):
+        return  1 / (1 + np.exp(-x))
+
+    def _extend_neg(self,neg,n):
+        k=int(n/len(neg))+1
+        return neg*k
+
+    def loss_log_likelihood(self,train_list):
+        total_loss=0
+        for u,pos,neg in train_list:
+            # print (u)
+            vis=self.items[pos,:]
+            if len(neg)<len(pos):
+                neg=self._extend_neg(neg,len(pos))
+            end_j=len(pos)
+            vjs=self.items[neg[:end_j],:]
+            total_loss+=self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T)).sum()
+        return total_loss
+
     def run_epoch(self, train):
         def calc_likelihood_u(u, i, j, users, items):
             res = users[u].dot(items[[i, j]].T)
@@ -78,8 +135,8 @@ class BPR:
             # apply sigmoid
             pred = 1 / (1 + np.exp(-pred))
             e_u_i_j = 1 - pred
-
             self.step(u, i, j, e_u_i_j)
+
         print('calc likelihood of train:')
         f_partial = functools.partial(calc_likelihood_u,
                                       users=self.users,
@@ -121,38 +178,37 @@ class BPR:
         with open(path_out_i, 'rb') as f:
             self.items = np.load(f, self.users)
 
-    def fit(self, S_train, S_valid):
+    def fit(self, S_train, S_valid,train_list):
         best_auc_valid = 0
         last_epoch_auc_valid = 0
         last_epoch_decrease = False
 
-        while True:
-            # print('epoch:', self.current_epoch)
-            S_train = S_train.sample(frac=1)
-            train_likelihood = self.run_epoch(S_train)
-            # print('calc mean trained loss')
-            # cur_epoch_loss_train = self.calc_mean_loss(trained)
-            print('calc evaluation AUC')
-            cur_epoch_auc_valid = auc(self, S_train, S_valid)
-            # epoch_convergence = {"train loss": cur_epoch_loss_train,
-            #                      "valid AUC": cur_epoch_auc_valid}
-            print('train log likelihood:', np.sum(np.log(np.array(train_likelihood))))
-            print('valid AUC:', cur_epoch_auc_valid)
-
-            if (cur_epoch_auc_valid <= last_epoch_auc_valid) and \
-                    last_epoch_decrease:
-                #TODO: configure epsilon for early stop
-                self.early_stop_epoch = self.current_epoch - 2
-                print('early stop! best epochs:', self.early_stop_epoch)
-                break
-
-            if not last_epoch_decrease:
-                best_auc_valid = cur_epoch_auc_valid
-                self.save_params(U_BEST_MODEL_FIT, I_BEST_MODEL_FIT)
-
+        while True and self.current_epoch<=self.max_epochs:
+            print('epoch:', self.current_epoch)
+            # train_likelihood = self.run_epoch(S_train)
+            train_likelihood  = self.run_epoch_2(mspu=4000,train_list=train_list)
             self.current_epoch += 1
-            last_epoch_decrease = cur_epoch_auc_valid <= last_epoch_auc_valid
-            last_epoch_auc_valid = cur_epoch_auc_valid
+            print('calc evaluation AUC')
+            # cur_epoch_auc_valid = auc(self, S_train, S_valid)
+            print(f"total train log likelihood: {self.loss_log_likelihood(train_list):.3f}")
+            # print('train log likelihood:', np.sum(np.log(np.array(train_likelihood))))
+
+            # print('valid AUC:', cur_epoch_auc_valid)
+            #
+            # if (cur_epoch_auc_valid <= last_epoch_auc_valid) and \
+            #         last_epoch_decrease:
+            #     #TODO: configure epsilon for early stop
+            #     self.early_stop_epoch = self.current_epoch - 2
+            #     print('early stop! best epochs:', self.early_stop_epoch)
+            #     break
+            #
+            # if not last_epoch_decrease:
+            #     best_auc_valid = cur_epoch_auc_valid
+            #     self.save_params(U_BEST_MODEL_FIT, I_BEST_MODEL_FIT)
+            #
+
+            # last_epoch_decrease = cur_epoch_auc_valid <= last_epoch_auc_valid
+            # last_epoch_auc_valid = cur_epoch_auc_valid
 
         return best_auc_valid
 
@@ -163,6 +219,7 @@ def hyper_param_tuning(params, S_train, S_valid, sample_method):
     # model_best = None
     params_best = None
 
+    #TODO: why we divide by number of items ? if we divide by numbers of sessions, we might be able to use it to use the distribution
     item_popularity = S_train.groupby(by='ItemID').UserID.size() / \
         len(S_train['ItemID'].unique())
     item_popularity = item_popularity.tolist()
@@ -285,7 +342,8 @@ def precision_k(model, k, S_train, S_test):
     return np.round(precision_k_tot / S_test.shape[0], 4)
 
 
-def split_data(data):
+def split_data(data,train):
+    #TODO: share with Karen I had to add train input as the merge functions uses this global var
     S_unobserved = data.groupby('UserID').ItemID.apply(
         lambda x: x.sample(n=1)).reset_index()[['UserID', 'ItemID']]
     S_unobserved['unobserved'] = True
@@ -301,8 +359,8 @@ if __name__ == '__main__':
     train['UserID'] = train['UserID'] - 1
     train['ItemID'] = train['ItemID'] - 1
 
-    S_train, S_test = split_data(train)
-    S_train_in, S_valid = split_data(S_train)
+    S_train, S_test = split_data(data=train,train=train)
+    S_train_in, S_valid = split_data(data=S_train,train=train)
 
     best_params_uni = hyper_param_tuning(BPR_HYPER_PARAMS, S_train_in, S_valid,
                                          'Uniform')

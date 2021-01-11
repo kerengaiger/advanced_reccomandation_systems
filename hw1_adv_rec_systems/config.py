@@ -19,6 +19,20 @@ RATING_COL = 'rating'
 
 SGD_PARAMS_OUT = 'sgd'
 
+BPR_PARAMS= {'k': 20,
+            'lr_u': 0.01,
+            'lr_i': 0.01,
+            'lr_j': 0.01,
+            'n_users': 6040,
+            'n_items': 3705,
+            'sample_method': 'Uniform',
+            'max_epochs': 15}
+
+BPR_CANDIDATE_PARAMS= {'k': [12, 15, 20],
+                    'lr_u': [0.01, 0.001],
+                    'lr_i': [0.01, 0.001],
+                    'lr_j': [0.01, 0.001]}
+
 SGD_HYPER_PARAMS = {
         'k': [50, 100],
         'gamma_u': np.logspace(-2, 0, num=1000),
@@ -35,11 +49,6 @@ ALS_HYPER_PARAMS = {'k': [10, 15, 20],
                     'gamma_i': np.logspace(-1.5, 0, num=1000),
                     'gamma_u_b': np.logspace(-1.5, 0, num=1000),
                     'gamma_i_b': np.logspace(-1.5, 0, num=1000)}
-
-BPR_HYPER_PARAMS = {'k': [12, 15, 20],
-                    'lr_u': [0.05, 0.1, 0.2],
-                    'lr_i': [0.05, 0.1, 0.2],
-                    'lr_j': [0.05, 0.1, 0.2]}
 
 
 TEST_OUT_SGD = 'test_preds_sgd.csv'

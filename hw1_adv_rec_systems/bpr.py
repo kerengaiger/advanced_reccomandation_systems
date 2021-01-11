@@ -3,15 +3,18 @@ import pandas as pd
 from tqdm import tqdm
 import functools
 from joblib import Parallel, delayed
-from config import TRAIN_BPR_PATH, BPR_HYPER_PARAMS, U_BEST_MODEL_FIT, \
+from config import TRAIN_BPR_PATH, BPR_PARAMS, BPR_CANDIDATE_PARAMS,U_BEST_MODEL_FIT, \
     U_BEST_MODEL_TRIAL, I_BEST_MODEL_FIT, I_BEST_MODEL_TRIAL, \
     RANDOM_TEST_PATH, POPULARITY_TEST_PATH
 from operator import itemgetter
-
+import matplotlib.pyplot as plt
+import random
 
 class BPR:
     def __init__(self, k=15, lr_u=0.01, lr_i=0.01,
-                 lr_j=0.01, n_users=0, n_items=0,sample_method='Uniform',max_epochs=100):
+                 lr_j=0.01, n_users=0, n_items=0,
+                 sample_method='Uniform',
+                 max_epochs=100,early_stop_threshold=0.001,early_stopping_lag=2):
         self.k = k  # dimension to represent user/item vectors
         self.lr_u = lr_u
         self.lr_i = lr_i
@@ -23,6 +26,8 @@ class BPR:
         self.current_epoch = 0
         self.item_popularity = []
         self.sample_method = sample_method
+        self.early_stop_threshold=early_stop_threshold
+        self.early_stopping_lag = early_stopping_lag
 
     def step(self, u, i, j, e_u_i_j):
         self.users[u] += self.lr_u * (
@@ -62,13 +67,6 @@ class BPR:
     #         # print('error after', e_u_i_j)
 
     def run_epoch_2(self,mspu=1,train_list=[]):
-        def calc_likelihood_u(u, i, j, users, items):
-            res = users[u].dot(items[[i, j]].T)
-            diff = res[0] - res[1]
-            pred = 1 / (1 + np.exp(-diff))
-            return pred
-
-        print(1)
         trained = []
         for u,pos,neg in tqdm(train_list): #we iterate on the users
             # print (u)
@@ -78,6 +76,7 @@ class BPR:
                 neg=self._extend_neg(neg,len(pos))
             # 2. I defined the mspu to 1 to have a fair run time check
             # we align to the list size if the number of postive session is lower than the max
+            random.shuffle(neg) #should help in convergence
             rmspu=min(mspu,len(pos))
 
             for idx,i in enumerate(pos[:rmspu]): # we iterate on the positive samples
@@ -87,14 +86,8 @@ class BPR:
                 pred = self.sigmoid(self.predict(u, i, j))
                 e_u_i_j=1-pred
                 self.step(u, i, j, e_u_i_j)
+
         likelihood_u_lst=0
-        # print('calc likelihood of train:')
-        # f_partial = functools.partial(calc_likelihood_u,
-        #                               users=self.users,
-        #                               items=self.items)
-        #
-        # likelihood_u_lst = Parallel(n_jobs=-1)(
-        #     delayed(f_partial)(u, i, j) for u, i, j in trained)
 
         return likelihood_u_lst
 
@@ -105,17 +98,38 @@ class BPR:
         k=int(n/len(neg))+1
         return neg*k
 
+    def auc_val(self,val_list):
+        """
+        we average the score for all users in the val set.
+        the score for each goes as follows
+        the number of times the prediction chance for the positive is higher than rest of negatives:
+            sigmoid(xuT*vi) > sigmoid(XuTvj) for every j element in val set
+            note, we dont sigmoid since when x1>x2 then sigmoid(x1)>sigmoid(x2)
+        """
+        total_auc=0
+        for u,pos,neg in val_list:
+            # print (u)
+            vi=self.items[pos,:]
+            vjs=self.items[neg,:]
+            # we dont use sigmoid here since it is monotonic increasing function
+            pos_score=np.dot(vi,self.users[[u],:].T)
+            negs_scores=np.dot(vjs,self.users[[u],:].T)
+            total_auc+=(negs_scores<=pos_score).sum()/len(neg)
+        return total_auc / len(val_list)
+
     def loss_log_likelihood(self,train_list):
         total_loss=0
+        count_items=0
         for u,pos,neg in train_list:
             # print (u)
             vis=self.items[pos,:]
             if len(neg)<len(pos):
                 neg=self._extend_neg(neg,len(pos))
             end_j=len(pos)
+            count_items+=len(pos)
             vjs=self.items[neg[:end_j],:]
-            total_loss+=self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T)).sum()
-        return total_loss
+            total_loss+=np.log(self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T))).sum()
+        return total_loss/count_items
 
     def run_epoch(self, train):
         def calc_likelihood_u(u, i, j, users, items):
@@ -178,40 +192,60 @@ class BPR:
         with open(path_out_i, 'rb') as f:
             self.items = np.load(f, self.users)
 
-    def fit(self, S_train, S_valid,train_list):
+    def fit(self,train_list,val_list):
         best_auc_valid = 0
         last_epoch_auc_valid = 0
         last_epoch_decrease = False
-
+        self.loss_curve = dict(training_loglike=[], validation_loglike=[], validation_auc=[])
         while True and self.current_epoch<=self.max_epochs:
             print('epoch:', self.current_epoch)
-            # train_likelihood = self.run_epoch(S_train)
+            # ----  suffling the users ---- #
+            random.shuffle(train_list)
             train_likelihood  = self.run_epoch_2(mspu=4000,train_list=train_list)
+            # ----  updating losses and scores ---- #
+            self.loss_curve['training_loglike'].append(self.loss_log_likelihood(train_list))
+            self.loss_curve['validation_loglike'].append(self.loss_log_likelihood(val_list))
+            self.loss_curve['validation_auc'].append(self.auc_val(val_list))
+            print(f"calc evaluation AUC: {self.loss_curve['validation_auc'][self.current_epoch]:.3f}")
+            print(f"total train log likelihood: {self.loss_curve['training_loglike'][self.current_epoch]:.3f}")
+
+            # ----  early stopping ---- #
+            # Early stopping
+            if self.current_epoch > self.early_stopping_lag:
+                if self.loss_curve['validation_loglike'][self.current_epoch] - self.early_stop_threshold > \
+                        self.loss_curve['validation_loglike'][self.current_epoch - self.early_stopping_lag]:
+                    print(f"Reached early stopping in epoch {self.current_epoch}")
+                    break
+
             self.current_epoch += 1
-            print('calc evaluation AUC')
-            # cur_epoch_auc_valid = auc(self, S_train, S_valid)
-            print(f"total train log likelihood: {self.loss_log_likelihood(train_list):.3f}")
-            # print('train log likelihood:', np.sum(np.log(np.array(train_likelihood))))
-
-            # print('valid AUC:', cur_epoch_auc_valid)
-            #
-            # if (cur_epoch_auc_valid <= last_epoch_auc_valid) and \
-            #         last_epoch_decrease:
-            #     #TODO: configure epsilon for early stop
-            #     self.early_stop_epoch = self.current_epoch - 2
-            #     print('early stop! best epochs:', self.early_stop_epoch)
-            #     break
-            #
-            # if not last_epoch_decrease:
-            #     best_auc_valid = cur_epoch_auc_valid
-            #     self.save_params(U_BEST_MODEL_FIT, I_BEST_MODEL_FIT)
-            #
-
-            # last_epoch_decrease = cur_epoch_auc_valid <= last_epoch_auc_valid
-            # last_epoch_auc_valid = cur_epoch_auc_valid
 
         return best_auc_valid
 
+    def plot_learning_curve(self):
+        # ---- plotting the validation and training ---- #
+        fig, (ax1,ax2) = plt.subplots(1,2,figsize=(10, 5))
+
+        epochs = epochs = range(1, len(self.loss_curve['training_loglike'])+ 1)
+
+        #left side
+        tr_mse = ax1.plot(epochs, self.loss_curve['training_loglike'], 'g', label='Training Loss (Normalized log-likelihood)')
+        val_mse = ax1.plot(epochs, self.loss_curve['validation_loglike'], 'b', label='Validation Loss (Normalized log-likelihood)')
+        ax1.legend()
+        #left side
+        tr_mse = ax2.plot(epochs, self.loss_curve['validation_auc'], 'b', label='Validation AUC')
+        ax2.legend()
+
+        # #right side
+        # tr=ax1.plot(epochs, self.loss_curve['training_loss'], 'g', label='Training loss (SSE)')
+        # ax1.tick_params(axis='y', labelcolor='g')
+        # ax2 = ax1.twinx()
+        # vl=ax2.plot(epochs, self.loss_curve['validation_mse'], 'r', label='Validation loss (MSE)')
+        # ax2.tick_params(axis='y', labelcolor='r')
+        # lns=tr+vl
+        # labs=[l.get_label() for l in lns]
+        # ax1.legend(lns,labs, loc=0)
+        # plt.show()
+        return fig.axes
 
 def hyper_param_tuning(params, S_train, S_valid, sample_method):
     trials_num = 5

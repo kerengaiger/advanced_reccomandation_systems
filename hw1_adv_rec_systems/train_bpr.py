@@ -1,6 +1,6 @@
 
-from bpr import *
-from data_bpr import prep_data
+from modules.bpr import *
+from modules.data_bpr import prep_data
 
 
 
@@ -37,8 +37,12 @@ if __name__ == '__main__':
 
     ###
     model = BPR(**trial_params)
+
+    print ('Starting point: ')
     print(model.auc_val(val_list))
     print(model.loss_log_likelihood(train_list))
+
+    print('Training phase: ')
     trial_auc = model.fit(train_list, val_list)
     fig=model.plot_learning_curve()
     plt.show()

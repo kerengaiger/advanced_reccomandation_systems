@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from config import *
+from config.config import *
 import random
 from tqdm import tqdm
 import pickle
@@ -32,6 +32,7 @@ class prep_data(object):
             self.users=pd.concat([df_train['UserID'],df_train['UserID']]).unique()
             self.items=pd.concat([df_train['ItemID'],df_tests['Item1'],df_tests['Item2']]).unique()
         print(f"Loaded {len(self.users):,} users and {len(self.items):,} items")
+
     def load_sessions_file(self,path):
         df=pd.read_csv(path)
         for col in df.columns:

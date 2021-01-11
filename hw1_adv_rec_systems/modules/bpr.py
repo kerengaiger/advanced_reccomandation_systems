@@ -3,9 +3,9 @@ import pandas as pd
 from tqdm import tqdm
 import functools
 from joblib import Parallel, delayed
-from config import TRAIN_BPR_PATH, BPR_PARAMS, BPR_CANDIDATE_PARAMS,U_BEST_MODEL_FIT, \
-    U_BEST_MODEL_TRIAL, I_BEST_MODEL_FIT, I_BEST_MODEL_TRIAL, \
-    RANDOM_TEST_PATH, POPULARITY_TEST_PATH
+# from config import TRAIN_BPR_PATH, BPR_PARAMS, BPR_CANDIDATE_PARAMS,U_BEST_MODEL_FIT, \
+#     U_BEST_MODEL_TRIAL, I_BEST_MODEL_FIT, I_BEST_MODEL_TRIAL, \
+#     RANDOM_TEST_PATH, POPULARITY_TEST_PATH
 from operator import itemgetter
 import matplotlib.pyplot as plt
 import random
@@ -40,33 +40,7 @@ class BPR:
             self.items[j].T)
         return pred
 
-    def random_j(self, u, train):
-        if self.sample_method == 'Uniform':
-            return np.random.choice(
-                list(set(train['ItemID'].unique()) -
-                     set(train[train['UserID'] == u]['ItemID'].unique())), 1)[0]
-        else:
-            return np.random.choice(
-                list(set(train['ItemID'].unique()) -
-                     set(train[train['UserID'] == u]['ItemID'].unique())), 1,
-                p=self.item_popularity)[0]
-
-    # def run_epoch(self, train):
-    #     for u, i in tqdm(train.values):
-    #         j = self.random_j(u, train)
-    #         pred = self.predict(u, i, j)
-    #         # apply sigmoid
-    #         pred = 1 / (1 + np.exp(-pred))
-    #         e_u_i_j = 1 - pred
-    #         # print('error before', e_u_i_j)
-    #         self.step(u, i, j, e_u_i_j)
-    #         # pred = self.predict(u, i, j)
-    #         # apply sigmoid
-    #         # pred = 1 / (1 + np.exp(-pred))
-    #         # e_u_i_j = 1 - pred
-    #         # print('error after', e_u_i_j)
-
-    def run_epoch_2(self,mspu=1,train_list=[]):
+    def run_epoch(self,mspu=1,train_list=[]):
         trained = []
         for u,pos,neg in tqdm(train_list): #we iterate on the users
             # print (u)
@@ -131,54 +105,6 @@ class BPR:
             total_loss+=np.log(self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T))).sum()
         return total_loss/count_items
 
-    def run_epoch(self, train):
-        def calc_likelihood_u(u, i, j, users, items):
-            res = users[u].dot(items[[i, j]].T)
-            diff = res[0] - res[1]
-            pred = 1 / (1 + np.exp(-diff))
-            return pred
-
-        trained = []
-        for u in tqdm(train['UserID'].unique()):
-            i = np.random.choice(
-                train[train['UserID'] == u]['ItemID'].unique(), 1)[0]
-
-            j = self.random_j(u, train)
-            trained.append((u, i, j))
-            pred = self.predict(u, i, j)
-            # apply sigmoid
-            pred = 1 / (1 + np.exp(-pred))
-            e_u_i_j = 1 - pred
-            self.step(u, i, j, e_u_i_j)
-
-        print('calc likelihood of train:')
-        f_partial = functools.partial(calc_likelihood_u,
-                                      users=self.users,
-                                      items=self.items)
-
-        likelihood_u_lst = Parallel(n_jobs=-1)(
-            delayed(f_partial)(u, i, j) for u, i, j in trained)
-
-        return likelihood_u_lst
-
-    def record(self, covn_dict):
-        epoch = "{:02d}".format(self.current_epoch)
-        temp = f"| epoch   # {epoch} :"
-        for key, value in covn_dict.items():
-            key = f"{key}"
-            val = '{:.9}'.format(value)
-            result = "{:<32}".format(F"  {key} : {val}")
-            temp += result
-        print(temp)
-
-    def calc_mean_loss(self, triples):
-        errors = []
-        for u, i, j in tqdm(triples):
-            pred = self.predict(u, i, j)
-            pred = 1 / (1 + np.exp(-pred))
-            e_u_i_j = 1 - pred
-            errors.append(e_u_i_j)
-        return sum(errors) / len(errors)
 
     def save_params(self, path_out_u, path_out_i):
         with open(path_out_u, 'wb') as f:
@@ -201,7 +127,7 @@ class BPR:
             print('epoch:', self.current_epoch)
             # ----  suffling the users ---- #
             random.shuffle(train_list)
-            train_likelihood  = self.run_epoch_2(mspu=4000,train_list=train_list)
+            train_likelihood  = self.run_epoch(mspu=4000,train_list=train_list)
             # ----  updating losses and scores ---- #
             self.loss_curve['training_loglike'].append(self.loss_log_likelihood(train_list))
             self.loss_curve['validation_loglike'].append(self.loss_log_likelihood(val_list))
@@ -235,16 +161,6 @@ class BPR:
         tr_mse = ax2.plot(epochs, self.loss_curve['validation_auc'], 'b', label='Validation AUC')
         ax2.legend()
 
-        # #right side
-        # tr=ax1.plot(epochs, self.loss_curve['training_loss'], 'g', label='Training loss (SSE)')
-        # ax1.tick_params(axis='y', labelcolor='g')
-        # ax2 = ax1.twinx()
-        # vl=ax2.plot(epochs, self.loss_curve['validation_mse'], 'r', label='Validation loss (MSE)')
-        # ax2.tick_params(axis='y', labelcolor='r')
-        # lns=tr+vl
-        # labs=[l.get_label() for l in lns]
-        # ax1.legend(lns,labs, loc=0)
-        # plt.show()
         return fig.axes
 
 def hyper_param_tuning(params, S_train, S_valid, sample_method):
@@ -292,27 +208,6 @@ def calc_delta_u(u, i, j_lst, users_arr, items_arr):
     # user are smaller than dot product of i item with u user
     delta_ui_uj = x_u_j_pred_vec[x_u_j_pred_vec < x_u_i_pred].shape[0]
     return delta_ui_uj
-
-
-def auc_u(u, i, S_full, users_arr, items_arr):
-    j_lst = list(set(S_full['ItemID'].unique()) -
-                 set(S_full[S_full['UserID'] == u]['ItemID'].unique()))
-
-    delta_ui_uj = calc_delta_u(u, i, j_lst, users_arr, items_arr)
-    auc_u = delta_ui_uj / len(j_lst)
-    return auc_u
-
-
-def auc(model, S_train, S_valid):
-    S_full = pd.concat([S_train, S_valid])
-
-    f_partial = functools.partial(auc_u, S_full=S_full, users_arr=model.users,
-                                  items_arr=model.items)
-
-    auc_u_lst = Parallel(n_jobs=-1)(delayed(f_partial)(u, i) for u, i in S_valid.values)
-    auc_tot = sum(auc_u_lst)
-
-    return np.round(auc_tot / S_valid.shape[0], 4)
 
 
 def rank_items(u, i_lst, S_full, users_arr, items_arr):
@@ -375,49 +270,25 @@ def precision_k(model, k, S_train, S_test):
 
     return np.round(precision_k_tot / S_test.shape[0], 4)
 
-
-def split_data(data,train):
-    #TODO: share with Karen I had to add train input as the merge functions uses this global var
-    S_unobserved = data.groupby('UserID').ItemID.apply(
-        lambda x: x.sample(n=1)).reset_index()[['UserID', 'ItemID']]
-    S_unobserved['unobserved'] = True
-    merged = pd.merge(train, S_unobserved, left_on=['UserID', 'ItemID'],
-                      right_on=['UserID', 'ItemID'], how='left')
-    S_observed = merged[merged['unobserved'].isnull()][['UserID', 'ItemID']]
-    S_unobserved = S_unobserved[['UserID', 'ItemID']]
-    return S_observed, S_unobserved
-
-
-if __name__ == '__main__':
-    train = pd.read_csv(TRAIN_BPR_PATH)
-    train['UserID'] = train['UserID'] - 1
-    train['ItemID'] = train['ItemID'] - 1
-
-    S_train, S_test = split_data(data=train,train=train)
-    S_train_in, S_valid = split_data(data=S_train,train=train)
-
-    best_params_uni = hyper_param_tuning(BPR_HYPER_PARAMS, S_train_in, S_valid,
-                                         'Uniform')
-
-    model = BPR(**best_params_uni)
-    model.load_params(U_BEST_MODEL_TRIAL, I_BEST_MODEL_TRIAL)
-
-    # calc precision_k
-    print('model precision@1:', precision_k(model, 1, S_train, S_test))
-    print('model precision@10:', precision_k(model, 10, S_train, S_test))
-    print('model precision@20:', precision_k(model, 20, S_train, S_test))
-
-    # calc mpr
-    print('model MPR:', mpr(model, S_train, S_test))
-
-    test_uniform = pd.read_csv(RANDOM_TEST_PATH)
-    test_uniform['UserID'] = test_uniform['UserID'] - 1
-    test_uniform['ItemID'] = test_uniform['ItemID'] - 1
-    test_uniform['pred'] = \
-        test_uniform.apply(lambda row: model.predict(row['UserID'],
-                                                     row['Item1'],
-                                                     row['Item2']), axis=1)
-    test_uniform['result'] = np.where(test_uniform['pred'] > 0, 0, 1)
-
-    ########################## TO DO #################################
-    ##Do the same for popularity model##
+#
+# if __name__ == '__main__':
+#
+#     # calc precision_k
+#     print('model precision@1:', precision_k(model, 1, S_train, S_test))
+#     print('model precision@10:', precision_k(model, 10, S_train, S_test))
+#     print('model precision@20:', precision_k(model, 20, S_train, S_test))
+#
+#     # calc mpr
+#     print('model MPR:', mpr(model, S_train, S_test))
+#
+#     test_uniform = pd.read_csv(RANDOM_TEST_PATH)
+#     test_uniform['UserID'] = test_uniform['UserID'] - 1
+#     test_uniform['ItemID'] = test_uniform['ItemID'] - 1
+#     test_uniform['pred'] = \
+#         test_uniform.apply(lambda row: model.predict(row['UserID'],
+#                                                      row['Item1'],
+#                                                      row['Item2']), axis=1)
+#     test_uniform['result'] = np.where(test_uniform['pred'] > 0, 0, 1)
+#
+#     ########################## TO DO #################################
+#     ##Do the same for popularity model##

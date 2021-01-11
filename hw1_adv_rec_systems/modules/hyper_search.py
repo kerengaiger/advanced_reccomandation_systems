@@ -104,11 +104,11 @@ class hyper_search_optimizer(object):
             output.to_csv(export_filename,mode=append_write)
 
 if __name__=='__main__':
-    from config import *
-    from bpr import *
-    from data_bpr import prep_data
+    from config.config import *
+    from modules.bpr import *
+    from modules.data_bpr import prep_data
 
-    # rd = prep_data(sample_users=3000, sample_items=2000)
+    # rd = prep_data(sample_users=100, sample_items=20)
     rd=prep_data()
     train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
 

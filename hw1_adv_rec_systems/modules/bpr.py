@@ -11,10 +11,13 @@ import matplotlib.pyplot as plt
 import random
 
 class BPR:
-    def __init__(self, k=15, lr_u=0.01, lr_i=0.01,
-                 lr_j=0.01, n_users=0, n_items=0,
+    def __init__(self,
+                 k=15,
+                 lr_u=0.01, lr_i=0.01,lr_j=0.01,
+                 regularizers=dict(au=1e-1,av=1e-1),
+                 n_users=0, n_items=0,
                  sample_method='Uniform',
-                 max_epochs=100,early_stop_threshold=0.001,early_stopping_lag=2):
+                 max_epochs=10,early_stop_threshold=0.001,early_stopping_lag=10):
         self.k = k  # dimension to represent user/item vectors
         self.lr_u = lr_u
         self.lr_i = lr_i
@@ -28,12 +31,13 @@ class BPR:
         self.sample_method = sample_method
         self.early_stop_threshold=early_stop_threshold
         self.early_stopping_lag = early_stopping_lag
+        self.regularizers=regularizers
 
     def step(self, u, i, j, e_u_i_j):
         self.users[u] += self.lr_u * (
-                    e_u_i_j * (self.items[i] - self.items[j]))
-        self.items[i] += self.lr_i * (e_u_i_j * self.users[u])
-        self.items[j] += -self.lr_j * (e_u_i_j * self.users[u])
+                    e_u_i_j * (self.items[i] - self.items[j])) -self.lr_u*self.regularizers['au']*self.users[u]
+        self.items[i] += self.lr_i * (e_u_i_j * self.users[u]) -self.lr_i*self.regularizers['av']*self.items[i]
+        self.items[j] += -self.lr_j * (e_u_i_j * self.users[u]) -self.lr_j*self.regularizers['av']*self.items[j]
 
     def predict(self, u, i, j):
         pred = self.users[u].dot(self.items[i].T) - self.users[u].dot(
@@ -78,7 +82,7 @@ class BPR:
         the score for each goes as follows
         the number of times the prediction chance for the positive is higher than rest of negatives:
             sigmoid(xuT*vi) > sigmoid(XuTvj) for every j element in val set
-            note, we dont sigmoid since when x1>x2 then sigmoid(x1)>sigmoid(x2)
+            note, we dont apply sigmoid since when x1>x2 then sigmoid(x1)>sigmoid(x2)
         """
         total_auc=0
         for u,pos,neg in val_list:
@@ -105,6 +109,25 @@ class BPR:
             total_loss+=np.log(self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T))).sum()
         return total_loss/count_items
 
+    def precision_at_n(self,n,train_list):
+        precision=0
+        for u,pos,neg in train_list:
+            pred_u=self.users[[u]].dot(self.items.T).flatten()
+            topn=np.argsort(pred_u)[-n:][::-1]
+            precision+=len(set(topn).intersection(set(pos))) / n
+        return precision/len(train_list)
+
+    def classification_accuracy(self,val_list):
+        accuracy = 0
+        for u, pos, neg in val_list:
+            vis = self.items[pos, :]
+            if len(neg) < len(pos):
+                neg = self._extend_neg(neg, len(pos))
+            end_j = len(pos)
+            vjs = self.items[neg[:end_j], :]
+            correct=np.dot(vis, self.users[[u], :].T) > np.dot(vjs, self.users[[u], :].T)
+            accuracy+=correct.flatten().sum()/len(pos)
+        return accuracy/len(val_list)
 
     def save_params(self, path_out_u, path_out_i):
         with open(path_out_u, 'wb') as f:
@@ -122,19 +145,25 @@ class BPR:
         best_auc_valid = 0
         last_epoch_auc_valid = 0
         last_epoch_decrease = False
-        self.loss_curve = dict(training_loglike=[], validation_loglike=[], validation_auc=[])
+        self.loss_curve = dict(training_loglike=[],
+                               validation_loglike=[],
+                               validation_auc=[],
+                               val_accuracy=[],
+                               precision_at_5=[])
         while True and self.current_epoch<=self.max_epochs:
             print('epoch:', self.current_epoch)
             # ----  suffling the users ---- #
             random.shuffle(train_list)
             train_likelihood  = self.run_epoch(mspu=4000,train_list=train_list)
             # ----  updating losses and scores ---- #
+            #TODO: consider create a prediction matrix and have all losses use those scores instead of having each one calculating it
             self.loss_curve['training_loglike'].append(self.loss_log_likelihood(train_list))
             self.loss_curve['validation_loglike'].append(self.loss_log_likelihood(val_list))
             self.loss_curve['validation_auc'].append(self.auc_val(val_list))
+            self.loss_curve['val_accuracy'].append(self.classification_accuracy(val_list))
+            self.loss_curve['precision_at_5'].append(self.precision_at_n(n=5, train_list=train_list))
             print(f"calc evaluation AUC: {self.loss_curve['validation_auc'][self.current_epoch]:.3f}")
             print(f"total train log likelihood: {self.loss_curve['training_loglike'][self.current_epoch]:.3f}")
-
             # ----  early stopping ---- #
             # Early stopping
             if self.current_epoch > self.early_stopping_lag:
@@ -149,18 +178,22 @@ class BPR:
 
     def plot_learning_curve(self):
         # ---- plotting the validation and training ---- #
-        fig, (ax1,ax2) = plt.subplots(1,2,figsize=(10, 5))
+        fig, ax = plt.subplots(2,2,figsize=(10, 5))
 
         epochs = epochs = range(1, len(self.loss_curve['training_loglike'])+ 1)
 
         #left side
-        tr_mse = ax1.plot(epochs, self.loss_curve['training_loglike'], 'g', label='Training Loss (Normalized log-likelihood)')
-        val_mse = ax1.plot(epochs, self.loss_curve['validation_loglike'], 'b', label='Validation Loss (Normalized log-likelihood)')
-        ax1.legend()
+        tr_mse = ax[0,0].plot(epochs, self.loss_curve['training_loglike'], 'b', label='Training Loss (Normalized log-likelihood)')
+        # val_mse = ax[0,0].plot(epochs, self.loss_curve['validation_loglike'], 'g', label='Validation Loss (Normalized log-likelihood)')
+        ax[0,0].legend()
         #left side
-        tr_mse = ax2.plot(epochs, self.loss_curve['validation_auc'], 'b', label='Validation AUC')
-        ax2.legend()
-
+        tr_mse = ax[0,1].plot(epochs, self.loss_curve['validation_auc'], 'g', label='Validation AUC')
+        ax[0,1].legend()
+        #bottom
+        tr_mse = ax[1, 0].plot(epochs, self.loss_curve['val_accuracy'], 'b', label='Validation accuracy')
+        ax[1, 0].legend()
+        tr_mse = ax[1, 1].plot(epochs, self.loss_curve['precision_at_5'], 'g', label='Training precision_at_5')
+        ax[1, 1].legend()
         return fig.axes
 
 def hyper_param_tuning(params, S_train, S_valid, sample_method):

@@ -29,8 +29,8 @@ class hyper_search_optimizer(object):
         :param models_params: which parameters we run for all candidates
         :param candidate_params: which parameters we search in (uniform)
         """
-        self.models_params=models_params
-        self.candidate_params=candidate_params
+        self.models_params=models_params #the dictionary with 1 instance choice of all parameters
+        self.candidate_params=candidate_params #the dictionary with the search options
 
     def select_random_option(self,x):
         i = np.random.randint(0, len(x))
@@ -40,8 +40,9 @@ class hyper_search_optimizer(object):
         candidate = {}
         for param_type in self.candidate_params.keys():
             if type(self.models_params[param_type]) == dict:
+                #this case our parameter has a dictionary for with sub parameters
                 param_sub = {}
-                for sub_val in self.models_params.keys():
+                for sub_val in self.models_params[param_type].keys():
                     x = self.select_random_option(self.candidate_params[param_type])
                     param_sub[sub_val] = x
                 candidate[param_type] = param_sub
@@ -85,7 +86,7 @@ class hyper_search_optimizer(object):
         ##---- update relevant metrics ----#
             candidate['naive_error']=0.5
             candidate['max_AUC'] = max(c_model.loss_curve['validation_auc'])
-            candidate['best_epoch'] = np.argmin(c_model.loss_curve['validation_loglike'])
+            candidate['best_epoch'] = np.argmax(c_model.loss_curve['validation_auc'])
             candidate['% improvement']=candidate['max_AUC']/candidate['naive_error']-1
             candidate['elapsed']=str(datetime.timedelta(seconds=end_run-start_run))
 
@@ -108,8 +109,14 @@ if __name__=='__main__':
     from modules.bpr import *
     from modules.data_bpr import prep_data
 
-    # rd = prep_data(sample_users=100, sample_items=20)
-    rd=prep_data()
+    sampling = True
+    sample_users = 100
+    sample_items = 50
+
+    if sampling:
+        rd = prep_data(sample_users=100, sample_items=50)
+    else:
+        rd = prep_data()
     train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
 
     hp=hyper_search_optimizer(models_params=BPR_PARAMS,candidate_params=BPR_CANDIDATE_PARAMS)

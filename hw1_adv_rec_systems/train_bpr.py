@@ -1,48 +1,34 @@
 
 from modules.bpr import *
 from modules.data_bpr import prep_data
-
+from config.config import BPR_PARAMS
 
 
 if __name__ == '__main__':
-    trial_params = {'k': 20,
-                    'lr_u': 0.01,
-                    'lr_i': 0.01,
-                    'lr_j': 0.01,
-                    'n_users': 6040,
-                    'n_items': 3705,
-                    'sample_method': 'Uniform',
-                    'max_epochs': 100}
-
-    # rd=prep_data(sample_users=100,sample_items=50)
-    rd=prep_data()
+    sampling= False #run on less data just to test the code
+    sample_users = 100
+    sample_items = 50
+    if sampling:
+        rd = prep_data(sample_users=sample_users, sample_items=sample_items)
+        BPR_PARAMS['n_users']=sample_users
+        BPR_PARAMS['n_items']=sample_items
+    else:
+        rd = prep_data()
     train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
-    # train_list, val_list = rd.load_local_train_val_list("saved_models/train_val_uniform.pkl")
-
-    # # short viz of the data model and a random sanity check
-    # user_list=[]
-    # for ses in train_list:
-    #     u, p, n = ses
-    #     user_list.append(u)
-    #     print(u, p[0:5], n[0:10])
-    # ut_idx=user_list.index(4)
-    # user_list=[]
-    # for ses in val_list:
-    #     u, p, n = ses
-    #     user_list.append(u)
-    #     print(u, p[0:5], n[0:10])
-    # uv_idx=user_list.index(4)
-    # u_t,p_t,n_t=train_list[ut_idx]
-    # u,p_v,n=val_list[uv_idx]
 
     ###
-    model = BPR(**trial_params)
+    model = BPR(**BPR_PARAMS)
 
-    print ('Starting point: ')
+    print('Starting point: ')
+    print('---------------------')
     print(model.auc_val(val_list))
+    print(model.loss_log_likelihood(val_list))
     print(model.loss_log_likelihood(train_list))
+    print(model.precision_at_n(n=5,train_list=train_list))
 
     print('Training phase: ')
     trial_auc = model.fit(train_list, val_list)
+    print(model.precision_at_n(n=5, train_list=train_list))
     fig=model.plot_learning_curve()
     plt.show()
+

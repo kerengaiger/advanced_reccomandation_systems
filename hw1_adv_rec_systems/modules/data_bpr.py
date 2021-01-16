@@ -12,6 +12,7 @@ class prep_data(object):
         self.users = None
         self.sample_set = (sample_users, sample_items)
         self.get_items_users()
+        self.train=self.load_sessions_file(TRAIN_BPR_PATH)
         self.train_list=None
         self.val_list=None
 
@@ -38,6 +39,7 @@ class prep_data(object):
         for col in df.columns:
             df[col] = df[col] - 1
         return df
+
     def leave_one_out(self,sess_df):
         # np.random.seed(9)
         sess_df_1 = sess_df.groupby('UserID').ItemID.apply(
@@ -98,34 +100,109 @@ class prep_data(object):
                 neg=list(np.delete(self.items,pos_index))
             session_list.append((u, pos, neg))
         return session_list
-    def get_train_val_lists(self,neg_method='uniform'):
+
+    def subset_train(self,n_users=10,n_items=10):
+        """
+        The major challange is to reindex the items and users to start from zero
+        :param n_users:
+        :param n_items:
+        :return:
+        """
+        sess_df=self.load_sessions_file(TRAIN_BPR_PATH)
+        items_sample=np.random.choice(a=sess_df['ItemID'],size=n_items,replace=False)
+        new_train=sess_df[sess_df['ItemID'].isin(items_sample)].copy()
+
+        users_sample = np.random.choice(a=new_train['UserID'], size=n_users, replace=False)
+        new_train=new_train[new_train['UserID'].isin(users_sample)].copy()
+
+        u = new_train['UserID'].unique()
+        new_user_idx=dict(zip(u,np.arange(len(u))))
+        new_train['UserID']=new_train['UserID'].map(new_user_idx)
+        self.users=np.arange(len(u))
+
+        i=new_train['ItemID'].unique()
+        new_item_idx = dict(zip(i, np.arange(len(i))))
+        new_train['ItemID']=new_train['ItemID'].map(new_item_idx)
+        self.items=np.arange(len(i))
+
+        return new_train
+
+    def split_train_test(self, sess_df,val_quant=0.2):
+
+        np.random.seed(9)
+        sess_df_val = sess_df.groupby('UserID').ItemID.apply(
+            lambda x: x.sample(n=int(val_quant*len(x)))).reset_index()[['UserID', 'ItemID']]
+        idx_to_remove = list(zip(sess_df_val['UserID'], sess_df_val['ItemID']))
+        sess_df_train= sess_df.set_index(['UserID', 'ItemID']).drop(index=idx_to_remove).reset_index()
+        sess_df_train.head()
+
+        # sanity check:
+        assert (len(sess_df_val) + len(sess_df_train) == len(sess_df))
+        print(f"training size: {len(sess_df_train) }, val size: {len(sess_df_val) } , ratio: {len(sess_df_val)/len(sess_df_train)}")
+        return sess_df_val,sess_df_train
+
+    def get_train_val_lists(self,neg_method='uniform',val_type='leave_one_out',val_quant=0.2):
         if self.sample_set!=(None,None):
             sess_df_all = self.load_sessions_file(TRAIN_BPR_PATH)
             sess_df_all=sess_df_all[sess_df_all['UserID'].isin(self.users) & sess_df_all['ItemID'].isin(self.items) ]
         else:
             sess_df_all=self.load_sessions_file(TRAIN_BPR_PATH)
-        sess_df_val, sess_df_train =self.leave_one_out(sess_df_all)
-        self.train_list=self.get_training_list(sess_df_train,neg_method=neg_method)
-        self.val_list = self.get_training_list(sess_df_val, neg_method='all_others')
+        if val_type=='leave_one_out':
+            sess_df_val, sess_df_train =self.leave_one_out(sess_df_all)
+        else:
+            sess_df_val,sess_df_train = self.split_train_test(sess_df_all,val_quant)
+        self.train_list=self.get_training_list(sess_df_train,neg_method=neg_method).copy()
+        self.val_list = self.get_training_list(sess_df_val, neg_method='all_others').copy()
         return self.train_list,self.val_list
+
+
     def save_local_train_val_list(self,pkl_path):
         # save to local file
         outfile = open(pkl_path, 'wb')
         print(f"saving lists to disk {pkl_path}")
         pickle.dump( (self.train_list,self.val_list), outfile)
         outfile.close()
+
     def load_local_train_val_list(self,pkl_path):
         print(f"loading lists from disk {pkl_path}")
         self.train_list, self.val_list = pickle.load(open(pkl_path, 'rb'))
         return self.train_list, self.val_list
 
 if __name__ == '__main__':
-    rd=prep_data(sample_users=100,sample_items=50)
-    train_list,val_list=rd.get_train_val_lists(neg_method='uniform')
-    # rd.save_local_train_val_list(pkl_path="saved_models/train_val_uniform.pkl")
-    # train_list, val_list = rd.load_local_train_val_list("saved_models/train_val.pkl")
+    # rd=prep_data(sample_users=100,sample_items=50)
+    # train_list,val_list=rd.get_train_val_lists(neg_method='uniform')
+
+    rd=prep_data()
+    #20 split
+    train_list, val_list = rd.get_train_val_lists(neg_method='uniform',val_type='normal',val_quant=0.2)
+
+    #leave one out
+    # train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
 
     #short viz of the data model
+    for ses in val_list:
+        u, p, n = ses
+        print(u, p[0:5], n[0:10])
     for ses in train_list:
         u, p, n = ses
         print(u, p[0:5], n[0:10])
+
+    u1,p1,n=train_list[6039]
+    u2,p2,n=val_list[6039]
+
+    print(u1,p1)
+    print(u2,p2)
+    # #print to file
+    # with open('test_train.txt','w') as f:
+    #     for ses in train_list:
+    #         u, p, n = ses
+    #         for p_i in p:
+    #             f.write(f"{u} {p_i}\n")
+    #         print(u, p[0:5], n[0:10])
+    # with open('test_val.txt','w') as f:
+    #     for ses in val_list:
+    #         u, p, n = ses
+    #         for p_i in p:
+    #             f.write(f"{u} {p_i}\n")
+    #         print(u, p[0:5], n[0:10])
+

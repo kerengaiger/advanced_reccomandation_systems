@@ -19,19 +19,28 @@ RATING_COL = 'rating'
 
 SGD_PARAMS_OUT = 'sgd'
 
-BPR_PARAMS= {'k': 20,
+BPR_PARAMS= {
+            # Model parameters
+            'n_users': 6040,
+            'n_items': 3705,
+            'k': 20,
             'lr_u': 0.01,
             'lr_i': 0.01,
             'lr_j': 0.01,
-            'n_users': 6040,
-            'n_items': 3705,
+            'regularizers':dict(au=1e-1,av=1e-1),
+            # Model parameters
             'sample_method': 'Uniform',
-            'max_epochs': 15}
+            #training loop parameters
+            'max_epochs':10,
+            'early_stop_threshold':0.001,
+            'early_stopping_lag':0
+             }
 
 BPR_CANDIDATE_PARAMS= {'k': [12, 15, 20],
                     'lr_u': [0.01, 0.001],
                     'lr_i': [0.01, 0.001],
-                    'lr_j': [0.01, 0.001]}
+                    'lr_j': [0.01, 0.001],
+                    'regularizers': [1e-1,1e-2]}
 
 SGD_HYPER_PARAMS = {
         'k': [50, 100],

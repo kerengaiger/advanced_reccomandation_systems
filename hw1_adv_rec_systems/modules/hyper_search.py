@@ -84,6 +84,7 @@ class hyper_search_optimizer(object):
 
         ## this section needs some refactoring to generalize it ##
         ##---- update relevant metrics ----#
+            #TODO add more metrics that we need to show improvments and sensitivity analysis
             candidate['naive_error']=0.5
             candidate['max_AUC'] = max(c_model.loss_curve['validation_auc'])
             candidate['best_epoch'] = np.argmax(c_model.loss_curve['validation_auc'])

@@ -9,6 +9,8 @@ from joblib import Parallel, delayed
 from operator import itemgetter
 import matplotlib.pyplot as plt
 import random
+from sklearn.metrics import roc_auc_score
+
 
 class BPR:
     def __init__(self,
@@ -86,13 +88,18 @@ class BPR:
         """
         total_auc=0
         for u,pos,neg in val_list:
-            # print (u)
             vi=self.items[pos,:]
             vjs=self.items[neg,:]
             # we dont use sigmoid here since it is monotonic increasing function
             pos_score=np.dot(vi,self.users[[u],:].T)
             negs_scores=np.dot(vjs,self.users[[u],:].T)
-            total_auc+=(negs_scores<=pos_score).sum()/len(neg)
+            if len(pos)>1:
+                p=self.sigmoid(np.concatenate((pos_score,negs_scores)))
+                t=np.concatenate((np.ones((len(pos_score),1)),np.zeros((len(negs_scores),1))))
+                user_auc=roc_auc_score(t,p)
+            else:
+                user_auc = (negs_scores <= pos_score).sum() / len(neg)
+            total_auc += user_auc
         return total_auc / len(val_list)
 
     def loss_log_likelihood(self,train_list):
@@ -184,7 +191,7 @@ class BPR:
 
         #left side
         tr_mse = ax[0,0].plot(epochs, self.loss_curve['training_loglike'], 'b', label='Training Loss (Normalized log-likelihood)')
-        # val_mse = ax[0,0].plot(epochs, self.loss_curve['validation_loglike'], 'g', label='Validation Loss (Normalized log-likelihood)')
+        val_mse = ax[0,0].plot(epochs, self.loss_curve['validation_loglike'], 'g', label='Validation Loss (Normalized log-likelihood)')
         ax[0,0].legend()
         #left side
         tr_mse = ax[0,1].plot(epochs, self.loss_curve['validation_auc'], 'g', label='Validation AUC')

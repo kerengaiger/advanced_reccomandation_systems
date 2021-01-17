@@ -6,15 +6,16 @@ from config.config import BPR_PARAMS
 
 if __name__ == '__main__':
     sampling= False #run on less data just to test the code
-    sample_users = 100
-    sample_items = 50
+    sample_users = 500
+    sample_items = 1000
+    rd = prep_data()
     if sampling:
-        rd = prep_data(sample_users=sample_users, sample_items=sample_items)
+        rd.subset_train(n_users=sample_users, n_items=sample_items)
         BPR_PARAMS['n_users']=sample_users
         BPR_PARAMS['n_items']=sample_items
-    else:
-        rd = prep_data()
-    train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
+
+    # train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
+    train_list, val_list = rd.get_train_val_lists(neg_method='uniform',val_type='normal',val_quant=0.2)
 
     ###
     model = BPR(**BPR_PARAMS)

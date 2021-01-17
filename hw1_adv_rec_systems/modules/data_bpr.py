@@ -161,7 +161,7 @@ if __name__ == '__main__':
 
     # rd.subset_train(n_users=10,n_items=50)
 
-    #20 split
+    #20% split
     train_list, val_list = rd.get_train_val_lists(neg_method='distribution',val_type='normal',val_quant=0.2)
 
     #leave one out

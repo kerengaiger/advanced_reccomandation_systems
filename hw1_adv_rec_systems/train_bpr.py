@@ -14,7 +14,7 @@ if __name__ == '__main__':
         BPR_PARAMS['n_users']=sample_users
         BPR_PARAMS['n_items']=sample_items
 
-    # train_list, val_list = rd.get_train_val_lists(neg_method='uniform')
+    # train_list, val_list = rd.get_train_val_lists(neg_method='uniform',val_type='leave_one_out')
     train_list, val_list = rd.get_train_val_lists(neg_method='uniform',val_type='normal',val_quant=0.2)
 
     ###
@@ -25,11 +25,13 @@ if __name__ == '__main__':
     print(model.auc_val(val_list))
     print(model.loss_log_likelihood(val_list))
     print(model.loss_log_likelihood(train_list))
-    print(model.precision_at_n(n=5,train_list=train_list))
+    print(model.precision_at_n(n=5,val_list=val_list,train_list=train_list))
+    print(f" MPR: {model.mpr(sess_list=val_list):.3f}")
 
     print('Training phase: ')
     trial_auc = model.fit(train_list, val_list)
-    print(model.precision_at_n(n=5, train_list=train_list))
+    print(f" MPR: {model.mpr(sess_list=val_list):.3f}")
+    print(model.precision_at_n(n=5, val_list=val_list,train_list=train_list))
     fig=model.plot_learning_curve()
     plt.show()
 

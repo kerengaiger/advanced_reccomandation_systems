@@ -34,6 +34,7 @@ class BPR:
         self.early_stop_threshold=early_stop_threshold
         self.early_stopping_lag = early_stopping_lag
         self.regularizers=regularizers
+        self.positive_array= np.array([])
 
     def step(self, u, i, j, e_u_i_j):
         self.users[u] += self.lr_u * (
@@ -48,16 +49,17 @@ class BPR:
 
     def run_epoch(self,mspu=1,train_list=[]):
         trained = []
+        train_list_step=train_list.copy()
+        random.shuffle(train_list_step) # we shuffle the order of the update
         for u,pos,neg in tqdm(train_list): #we iterate on the users
-            # print (u)
             # some edge cases:
             # 1. we can have a case where len(neg) < len(pos), here we extend the list
             if len(neg)<len(pos):
                 neg=self._extend_neg(neg,len(pos))
-            # 2. I defined the mspu to 1 to have a fair run time check
+            # 2. I defined the mspu to 1 to have a fair run time check -NOT Needed anymore
             # we align to the list size if the number of postive session is lower than the max
             random.shuffle(neg) #should help in convergence
-            rmspu=min(mspu,len(pos))
+            rmspu=min(mspu,len(pos)) # we shuffle the order of triples
 
             for idx,i in enumerate(pos[:rmspu]): # we iterate on the positive samples
                 # print(i)
@@ -75,6 +77,7 @@ class BPR:
         return  1 / (1 + np.exp(-x))
 
     def _extend_neg(self,neg,n):
+        """if the neg list is shorter than the positive we just extend it"""
         k=int(n/len(neg))+1
         return neg*k
 
@@ -116,13 +119,45 @@ class BPR:
             total_loss+=np.log(self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T))).sum()
         return total_loss/count_items
 
-    def precision_at_n(self,n,train_list):
+    def precision_at_n(self,n,val_list,train_list):
+        """
+        1. we rank the validation set best on the best scores
+        2. Removing positive samples from the training set
+        3. we check how many validated true session are in top n
+        :parameter
+        """
+        #Todo: it is not fair to compute precision on validation set unless we zero the training set positives
+        if self.positive_array.size == 0:
+            self.positive_array = self.lookup_positive(train_list)
         precision=0
-        for u,pos,neg in train_list:
+        for u,pos,neg in val_list:
+            #we predict all items
             pred_u=self.users[[u]].dot(self.items.T).flatten()
+            #zero'ing the pos from the train (or in this case minimizing)
+            u_idx_t=self.positive_array[u]
+            _,pos_item_t,_=train_list[u_idx_t]
+            pred_u[pos_item_t]=pred_u.min()-1
             topn=np.argsort(pred_u)[-n:][::-1]
             precision+=len(set(topn).intersection(set(pos))) / n
-        return precision/len(train_list)
+        return precision/len(val_list)
+
+    def mpr(self,sess_list):
+        """"
+        what is the rank of one positive prediction among all other negative rank
+        if there are more than 1 negative, we choose only the first 1"""
+        total_mpr=0
+        for u, pos, neg in sess_list:
+            if len(pos)>1:
+                pos=pos[0]
+            vi=self.items[pos,:]
+            vjs=self.items[neg,:]
+            # we dont use sigmoid here since it is monotonic increasing function
+            pos_score=np.dot(vi,self.users[[u],:].T)
+            negs_scores=np.dot(vjs,self.users[[u],:].T)
+            #if we had the best prediction, the pos score would be the highest
+            #best mpr is equal to 0
+            total_mpr+=( (negs_scores>pos_score).sum() ) /(len(negs_scores))
+        return total_mpr/len(sess_list)
 
     def classification_accuracy(self,val_list):
         accuracy = 0
@@ -148,10 +183,15 @@ class BPR:
         with open(path_out_i, 'rb') as f:
             self.items = np.load(f, self.users)
 
+    def lookup_positive(self,train_list):
+        lookup_arr=np.arange(0,len(train_list))
+        for i,(u,p,n) in enumerate(train_list):
+            lookup_arr[i]=u
+        return lookup_arr
+
     def fit(self,train_list,val_list):
+        self.positive_array=self.lookup_positive(train_list)
         best_auc_valid = 0
-        last_epoch_auc_valid = 0
-        last_epoch_decrease = False
         self.loss_curve = dict(training_loglike=[],
                                validation_loglike=[],
                                validation_auc=[],
@@ -160,7 +200,6 @@ class BPR:
         while True and self.current_epoch<=self.max_epochs:
             print('epoch:', self.current_epoch)
             # ----  suffling the users ---- #
-            random.shuffle(train_list)
             train_likelihood  = self.run_epoch(mspu=4000,train_list=train_list)
             # ----  updating losses and scores ---- #
             #TODO: consider create a prediction matrix and have all losses use those scores instead of having each one calculating it
@@ -168,7 +207,7 @@ class BPR:
             self.loss_curve['validation_loglike'].append(self.loss_log_likelihood(val_list))
             self.loss_curve['validation_auc'].append(self.auc_val(val_list))
             self.loss_curve['val_accuracy'].append(self.classification_accuracy(val_list))
-            self.loss_curve['precision_at_5'].append(self.precision_at_n(n=5, train_list=train_list))
+            self.loss_curve['precision_at_5'].append(self.precision_at_n(n=5, val_list=val_list,train_list=train_list))
             print(f"calc evaluation AUC: {self.loss_curve['validation_auc'][self.current_epoch]:.3f}")
             print(f"total train log likelihood: {self.loss_curve['training_loglike'][self.current_epoch]:.3f}")
             # ----  early stopping ---- #
@@ -199,7 +238,7 @@ class BPR:
         #bottom
         tr_mse = ax[1, 0].plot(epochs, self.loss_curve['val_accuracy'], 'b', label='Validation accuracy')
         ax[1, 0].legend()
-        tr_mse = ax[1, 1].plot(epochs, self.loss_curve['precision_at_5'], 'g', label='Training precision_at_5')
+        tr_mse = ax[1, 1].plot(epochs, self.loss_curve['precision_at_5'], 'g', label='val precision_at_5')
         ax[1, 1].legend()
         return fig.axes
 

@@ -97,12 +97,12 @@ class prep_data(object):
                 continue
             if neg_method=='uniform':
                 #regardless if we look on training set, or leave on out set, we never wish to pick a negative this user liked
-                original_pos=self.data.loc[0].ItemID.values
+                original_pos=self.data.loc[u].ItemID.values
                 neg = list(set(self.items) - set(original_pos))
                 random.shuffle(neg)
             elif neg_method=='distribution':# this is sampled by priority
                 #we need to remove the <original> positive items from the item_dist before we sample
-                original_pos = self.data.loc[0].ItemID.values
+                original_pos = self.data.loc[u].ItemID.values
                 neg = list(item_dist.drop(original_pos).sample(len(pos), weights=item_dist, replace=True).index.values)
                 #trick to remove pos element from the documentation:  index values in sampled object not in weights will be assigned weights of zero
                 """
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     # rd.subset_train(n_users=10,n_items=50)
 
     #20% split
-    train_list, val_list = rd.get_train_val_lists(neg_method='distribution',val_type='normal',val_quant=0.2)
+    train_list, val_list = rd.get_train_val_lists(neg_method='uniform',val_type='normal',val_quant=0.2)
 
     #leave one out
     # train_list, val_list = rd.get_train_val_lists(neg_method='uniform', val_type='leave_one_out', val_quant=0.2)
@@ -175,8 +175,12 @@ if __name__ == '__main__':
         u, p, n = ses
         print(u, p[0:5], n[0:10])
 
-    # u1,p1,n=train_list[6039]
-    # u2,p2,n=val_list[6039]
+
+
+    u1,p1,n=train_list[6039]
+    u2,p2,n2=val_list[6038]
+    u1,p1, n1 = val_list[6039]
+
     #
     # print(u1,p1)
     # print(u2,p2)

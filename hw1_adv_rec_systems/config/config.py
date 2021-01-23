@@ -31,7 +31,7 @@ BPR_PARAMS= {
             # Model parameters
             'sample_method': 'Uniform',
             #training loop parameters
-            'max_epochs':50,
+            'max_epochs':20,
             'early_stop_threshold':0.001,
             'early_stopping_lag':0
              }

@@ -137,6 +137,7 @@ class BPR:
             u_idx_t=self.positive_array[u]
             _,pos_item_t,_=train_list[u_idx_t]
             pred_u[pos_item_t]=pred_u.min()-1
+            #TODO when we validate against the frequent - we need to remove the negative cases not in the validation set
             topn=np.argsort(pred_u)[-n:][::-1]
             precision+=len(set(topn).intersection(set(pos))) / n
         return precision/len(val_list)

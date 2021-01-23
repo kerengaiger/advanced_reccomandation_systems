@@ -27,13 +27,13 @@ BPR_PARAMS= {
             'lr_u': 0.01,
             'lr_i': 0.01,
             'lr_j': 0.01,
-            'regularizers':dict(au=1e-1,av=1e-1),
+            'regularizers':dict(au=1e-2,av=1e-2),
             # Model parameters
             'sample_method': 'Uniform',
             #training loop parameters
             'max_epochs':20,
             'early_stop_threshold':0.001,
-            'early_stopping_lag':0
+            'early_stopping_lag':2
              }
 
 BPR_CANDIDATE_PARAMS= {'k': [12, 15, 20],

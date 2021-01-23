@@ -45,7 +45,7 @@ class BPR:
         self.items[j] += -self.lr_j * (e_u_i_j * self.users[u]) -self.lr_j*self.regularizers['av']*self.items[j]
 
     def predict(self):
-        self.scores=self.sigmoid(self.users.dot(self.items.T))
+        return self.users.dot(self.items.T)
 
     def predict_u(self, u, i, j):
         pred = self.users[u].dot(self.items[i].T) - self.users[u].dot(
@@ -96,16 +96,18 @@ class BPR:
         """
         total_auc=0
         for u,pos,neg in val_list:
-            vi=self.items[pos,:]
-            vjs=self.items[neg,:]
-            # we dont use sigmoid here since it is monotonic increasing function
-            pos_score=np.dot(vi,self.users[[u],:].T)
-            negs_scores=np.dot(vjs,self.users[[u],:].T)
+            # vi=self.items[pos,:]
+            # vjs=self.items[neg,:]
+            # pos_score=np.dot(vi,self.users[[u],:].T)
+            # negs_scores=np.dot(vjs,self.users[[u],:].T)
+            pos_score=self.scores[u,pos]
+            negs_scores=self.scores[u,neg]
             if len(pos)>1:
                 p=self.sigmoid(np.concatenate((pos_score,negs_scores)))
                 t=np.concatenate((np.ones((len(pos_score),1)),np.zeros((len(negs_scores),1))))
                 user_auc=roc_auc_score(t,p)
             else:
+                # we dont use sigmoid here since it is monotonic increasing function
                 user_auc = (negs_scores <= pos_score).sum() / len(neg)
             total_auc += user_auc
         return total_auc / len(val_list)
@@ -115,13 +117,15 @@ class BPR:
         count_items=0
         for u,pos,neg in train_list:
             # print (u)
-            vis=self.items[pos,:]
+            vis=pos
             if len(neg)<len(pos):
                 neg=self._extend_neg(neg,len(pos))
             end_j=len(pos)
             count_items+=len(pos)
-            vjs=self.items[neg[:end_j],:]
-            total_loss+=np.log(self.sigmoid(np.dot(vis,self.users[[u],:].T)-np.dot(vjs,self.users[[u],:].T))).sum()
+            vjs=neg[:end_j]
+            vis_scores=self.scores[u,vis]
+            vjs_scores=self.scores[u,vjs]
+            total_loss+=np.log(self.sigmoid(vis_scores-vjs_scores)).sum()
         return total_loss/count_items
 
     def precision_at_n(self,n,val_list,train_list):
@@ -137,7 +141,7 @@ class BPR:
         precision=0
         for u,pos,neg in val_list:
             #we predict all items
-            pred_u=self.users[[u]].dot(self.items.T).flatten()
+            pred_u=self.scores[u,:]
             #zero'ing the pos from the train (or in this case minimizing)
             u_idx_t=self.positive_array[u]
             _,pos_item_t,_=train_list[u_idx_t]
@@ -155,11 +159,9 @@ class BPR:
         for u, pos, neg in sess_list:
             if len(pos)>1:
                 pos=pos[0]
-            vi=self.items[pos,:]
-            vjs=self.items[neg,:]
             # we dont use sigmoid here since it is monotonic increasing function
-            pos_score=np.dot(vi,self.users[[u],:].T)
-            negs_scores=np.dot(vjs,self.users[[u],:].T)
+            pos_score=self.scores[u,pos]
+            negs_scores=self.scores[u,neg]
             #if we had the best prediction, the pos score would be the highest
             #best mpr is equal to 0
             total_mpr+=( (negs_scores>pos_score).sum() ) /(len(negs_scores))
@@ -168,12 +170,17 @@ class BPR:
     def classification_accuracy(self,val_list):
         accuracy = 0
         for u, pos, neg in val_list:
-            vis = self.items[pos, :]
+            # vis = self.items[pos, :]
             if len(neg) < len(pos):
                 neg = self._extend_neg(neg, len(pos))
             end_j = len(pos)
-            vjs = self.items[neg[:end_j], :]
-            correct=np.dot(vis, self.users[[u], :].T) > np.dot(vjs, self.users[[u], :].T)
+            # vjs = self.items[neg[:end_j], :]
+            vis = pos
+            vjs = neg[:end_j]
+            vis_scores=self.scores[u,vis]
+            vjs_scores=self.scores[u,vjs]
+            # correct=np.dot(vis, self.users[[u], :].T) > np.dot(vjs, self.users[[u], :].T)
+            correct=vis_scores> vjs_scores
             accuracy+=correct.flatten().sum()/len(pos)
         return accuracy/len(val_list)
 
@@ -208,12 +215,11 @@ class BPR:
                                precision_at_10=[])
         while True and self.current_epoch<=self.max_epochs:
             print('epoch:', self.current_epoch)
-            # ----  suffling the users ---- #
             train_likelihood  = self.run_epoch(mspu=4000,train_list=train_list)
             # ----  updating losses and scores ---- #
             #TODO: consider create a prediction matrix and have all losses use those scores instead of having each one calculating it
 
-            self.predict()
+            self.scores= self.predict()
 
             self.loss_curve['training_loglike'].append(self.loss_log_likelihood(train_list))
             self.loss_curve['validation_loglike'].append(self.loss_log_likelihood(val_list))

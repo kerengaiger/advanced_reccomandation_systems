@@ -26,6 +26,7 @@ class BPR:
         self.lr_j = lr_j
         self.users = np.random.rand(n_users + 1, self.k) * 1 #TODO speak with Karen, the vectors dimentation are opposite to the formulas
         self.items = np.random.rand(n_items + 1, self.k) * 1
+        self.scores = self.predict() # the scores for all users and items
         self.early_stop_epoch = None
         self.max_epochs=max_epochs
         self.current_epoch = 0
@@ -36,13 +37,17 @@ class BPR:
         self.regularizers=regularizers
         self.positive_array= np.array([])
 
+
     def step(self, u, i, j, e_u_i_j):
         self.users[u] += self.lr_u * (
                     e_u_i_j * (self.items[i] - self.items[j])) -self.lr_u*self.regularizers['au']*self.users[u]
         self.items[i] += self.lr_i * (e_u_i_j * self.users[u]) -self.lr_i*self.regularizers['av']*self.items[i]
         self.items[j] += -self.lr_j * (e_u_i_j * self.users[u]) -self.lr_j*self.regularizers['av']*self.items[j]
 
-    def predict(self, u, i, j):
+    def predict(self):
+        self.scores=self.sigmoid(self.users.dot(self.items.T))
+
+    def predict_u(self, u, i, j):
         pred = self.users[u].dot(self.items[i].T) - self.users[u].dot(
             self.items[j].T)
         return pred
@@ -65,7 +70,7 @@ class BPR:
                 # print(i)
                 j=neg[idx]
                 trained.append((u, i, j))
-                pred = self.sigmoid(self.predict(u, i, j))
+                pred = self.sigmoid(self.predict_u(u, i, j))
                 e_u_i_j=1-pred
                 self.step(u, i, j, e_u_i_j)
 
@@ -197,25 +202,36 @@ class BPR:
                                validation_loglike=[],
                                validation_auc=[],
                                val_accuracy=[],
-                               precision_at_5=[])
+                               mpr=[],
+                               precision_at_1=[],
+                               precision_at_5=[],
+                               precision_at_10=[])
         while True and self.current_epoch<=self.max_epochs:
             print('epoch:', self.current_epoch)
             # ----  suffling the users ---- #
             train_likelihood  = self.run_epoch(mspu=4000,train_list=train_list)
             # ----  updating losses and scores ---- #
             #TODO: consider create a prediction matrix and have all losses use those scores instead of having each one calculating it
+
+            self.predict()
+
             self.loss_curve['training_loglike'].append(self.loss_log_likelihood(train_list))
             self.loss_curve['validation_loglike'].append(self.loss_log_likelihood(val_list))
             self.loss_curve['validation_auc'].append(self.auc_val(val_list))
             self.loss_curve['val_accuracy'].append(self.classification_accuracy(val_list))
-            self.loss_curve['precision_at_5'].append(self.precision_at_n(n=5, val_list=val_list,train_list=train_list))
+            self.loss_curve['mpr'].append(self.mpr(val_list))
+            self.loss_curve['precision_at_1'].append(self.precision_at_n(n=1, val_list=val_list,train_list=train_list))
+            self.loss_curve['precision_at_5'].append(self.precision_at_n(n=5, val_list=val_list, train_list=train_list))
+            self.loss_curve['precision_at_10'].append(self.precision_at_n(n=10, val_list=val_list, train_list=train_list))
+
             print(f"calc evaluation AUC: {self.loss_curve['validation_auc'][self.current_epoch]:.3f}")
             print(f"total train log likelihood: {self.loss_curve['training_loglike'][self.current_epoch]:.3f}")
+
             # ----  early stopping ---- #
             # Early stopping
             if self.current_epoch > self.early_stopping_lag:
-                if self.loss_curve['validation_loglike'][self.current_epoch] - self.early_stop_threshold > \
-                        self.loss_curve['validation_loglike'][self.current_epoch - self.early_stopping_lag]:
+                if self.loss_curve['validation_auc'][self.current_epoch] - self.early_stop_threshold < \
+                        self.loss_curve['validation_auc'][self.current_epoch - self.early_stopping_lag]:
                     print(f"Reached early stopping in epoch {self.current_epoch}")
                     break
 
@@ -225,7 +241,7 @@ class BPR:
 
     def plot_learning_curve(self):
         # ---- plotting the validation and training ---- #
-        fig, ax = plt.subplots(2,2,figsize=(10, 5))
+        fig, ax = plt.subplots(2,3,figsize=(12, 8))
 
         epochs = epochs = range(1, len(self.loss_curve['training_loglike'])+ 1)
 
@@ -237,138 +253,13 @@ class BPR:
         tr_mse = ax[0,1].plot(epochs, self.loss_curve['validation_auc'], 'g', label='Validation AUC')
         ax[0,1].legend()
         #bottom
-        tr_mse = ax[1, 0].plot(epochs, self.loss_curve['val_accuracy'], 'b', label='Validation accuracy')
+        tr_mse = ax[0, 2].plot(epochs, self.loss_curve['mpr'], 'g', label='mpr')
+        ax[0, 2].legend()
+        tr_mse = ax[1, 0].plot(epochs, self.loss_curve['precision_at_1'], 'g', label='val precision_at_1')
         ax[1, 0].legend()
         tr_mse = ax[1, 1].plot(epochs, self.loss_curve['precision_at_5'], 'g', label='val precision_at_5')
         ax[1, 1].legend()
+        tr_mse = ax[1, 2].plot(epochs, self.loss_curve['precision_at_10'], 'g', label='val precision_at_10')
+        ax[1, 2].legend()
+
         return fig.axes
-
-def hyper_param_tuning(params, S_train, S_valid, sample_method):
-    trials_num = 5
-    best_auc = 0
-    # model_best = None
-    params_best = None
-
-    #TODO: why we divide by number of items ? if we divide by numbers of sessions, we might be able to use it to use the distribution
-    item_popularity = S_train.groupby(by='ItemID').UserID.size() / \
-        len(S_train['ItemID'].unique())
-    item_popularity = item_popularity.tolist()
-
-    # run trials
-    for trial in range(trials_num):
-        print("------------------------------------------------")
-        print("trial number : ", trial)
-        trial_params = {k: np.random.choice(params[k]) for k in params.keys()}
-        trial_params['n_users'] = len(pd.concat([S_train, S_valid])['UserID'].unique())
-        trial_params['n_items'] = len(pd.concat([S_train, S_valid])['ItemID'].unique())
-
-        model = BPR(**trial_params)
-        model.sample_method = sample_method
-        model.item_popularity = item_popularity
-
-        # fit and update num of epochs in early stop
-        trial_auc = model.fit(S_train, S_valid)
-
-        if trial_auc > best_auc:
-            best_auc = trial_auc
-            model.save_params(U_BEST_MODEL_TRIAL, I_BEST_MODEL_TRIAL)
-            # model_best = model
-            params_best = trial_params
-
-    # print('best model AUC:', best_auc)
-    # return params_best, model_best.early_stop_epoch
-
-    return params_best
-
-
-def calc_delta_u(u, i, j_lst, users_arr, items_arr):
-    x_u_i_pred = users_arr[u].T.dot(items_arr[i])
-    x_u_j_pred_vec = users_arr[u].dot(items_arr[j_lst].T)
-    # good preds are the cases where the dot product of j items with u
-    # user are smaller than dot product of i item with u user
-    delta_ui_uj = x_u_j_pred_vec[x_u_j_pred_vec < x_u_i_pred].shape[0]
-    return delta_ui_uj
-
-
-def rank_items(u, i_lst, S_full, users_arr, items_arr):
-    j_lst = list(set(S_full['ItemID'].unique()) -
-                 set(S_full[S_full['UserID'] == u]['ItemID'].unique()))
-    j_preds = users_arr[u].dot(items_arr[j_lst].T)
-    j_dict = dict(zip(j_lst, j_preds))
-    i_preds = users_arr[u].dot(items_arr[i_lst].T)
-    i_dict = dict(zip(i_lst, i_preds))
-    j_dict = j_dict.update(i_dict)
-
-    rank_k_items = sorted(j_dict.items(),
-                          key=itemgetter(1),
-                          reverse=True)
-    return rank_k_items
-
-
-def mpr_u(u, i_lst, S_full, users_arr, items_arr):
-    rank_k_items = rank_items(u, i_lst, S_full, users_arr, items_arr)
-    items_scores_df = pd.DataFrame(rank_k_items, columns=['itemID', 'score'])
-    mpr_u_score = items_scores_df[items_scores_df['ItemID'].isin(i_lst)].index[0]
-    return 1 / mpr_u_score
-
-
-def mpr(model, S_train, S_test):
-    S_full = pd.concat([S_train, S_test])
-    S_test = S_test.groupby('UserID').ItemID.apply(list).reset_index()
-
-    f_partial = functools.partial(mpr_u, S_full=S_full,
-                                  users_arr=model.users,
-                                  items_arr=model.items)
-    precision_k_u_lst = Parallel(n_jobs=-1)(delayed(f_partial)(u, i_lst)
-                                            for u, i_lst in S_test.values)
-
-    precision_k_tot = sum(precision_k_u_lst)
-
-    return np.round(precision_k_tot / S_test.shape[0], 4)
-
-
-def precision_k_u(u, i_lst, S_full, users_arr, items_arr, k):
-    rank_k_items = rank_items(u, i_lst, S_full, users_arr, items_arr)
-    rank_k_items_set = set(dict(rank_k_items[:k]).keys())
-
-    precision_k_u_score = len(rank_k_items_set.intersection(set(i_lst))) / k
-    return precision_k_u_score
-
-
-def precision_k(model, k, S_train, S_test):
-    S_full = pd.concat([S_train, S_test])
-
-    S_test = S_test.groupby('UserID').ItemID.apply(list).reset_index()
-    f_partial = functools.partial(precision_k_u, S_full=S_full,
-                                  users_arr=model.users,
-                                  items_arr=model.items,
-                                  k=k)
-    precision_k_u_lst = Parallel(n_jobs=-1)(delayed(f_partial)(u, i_lst)
-                                            for u, i_lst in S_test.values)
-
-    precision_k_tot = sum(precision_k_u_lst)
-
-    return np.round(precision_k_tot / S_test.shape[0], 4)
-
-#
-# if __name__ == '__main__':
-#
-#     # calc precision_k
-#     print('model precision@1:', precision_k(model, 1, S_train, S_test))
-#     print('model precision@10:', precision_k(model, 10, S_train, S_test))
-#     print('model precision@20:', precision_k(model, 20, S_train, S_test))
-#
-#     # calc mpr
-#     print('model MPR:', mpr(model, S_train, S_test))
-#
-#     test_uniform = pd.read_csv(RANDOM_TEST_PATH)
-#     test_uniform['UserID'] = test_uniform['UserID'] - 1
-#     test_uniform['ItemID'] = test_uniform['ItemID'] - 1
-#     test_uniform['pred'] = \
-#         test_uniform.apply(lambda row: model.predict(row['UserID'],
-#                                                      row['Item1'],
-#                                                      row['Item2']), axis=1)
-#     test_uniform['result'] = np.where(test_uniform['pred'] > 0, 0, 1)
-#
-#     ########################## TO DO #################################
-#     ##Do the same for popularity model##

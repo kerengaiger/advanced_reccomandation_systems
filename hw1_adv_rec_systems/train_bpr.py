@@ -5,11 +5,11 @@ from config.config import BPR_PARAMS
 
 
 if __name__ == '__main__':
-    sampling= False #run on less data just to test the code
+    subsetting= False #run on less data just to test the code
     sample_users = 500
     sample_items = 1000
     rd = prep_data()
-    if sampling:
+    if subsetting:
         rd.subset_train(n_users=sample_users, n_items=sample_items)
         BPR_PARAMS['n_users']=sample_users
         BPR_PARAMS['n_items']=sample_items

@@ -7,6 +7,8 @@ TRAIN_BPR_PATH = 'data_bpr/Train.csv'
 RANDOM_TEST_PATH = 'data_bpr/RandomTest.csv'
 POPULARITY_TEST_PATH = 'data_bpr/PopularityTest.csv'
 
+RANDOM_TEST_OUT = 'RandomTestOut.csv'
+POPULARITY_TEST_OUT = 'PopularityTestOut.csv'
 
 USER_COL_NAME_IN_DATAEST = 'User_ID_Alias'
 ITEM_COL_NAME_IN_DATASET = 'Movie_ID_Alias'

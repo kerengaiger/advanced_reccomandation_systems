@@ -269,3 +269,20 @@ class BPR:
         ax[1, 2].legend()
 
         return fig.axes
+
+    def fit_early_stop(self, train_list, best_epoch):
+        """
+        fit the model initialized based on best configuration until its early stop epoch. The fit is on all full
+        dataset.
+        """
+
+        self.loss_curve = dict(training_loglike=[])
+        for epoch in range(best_epoch):
+            self.current_epoch = epoch
+            print('epoch:', self.current_epoch)
+            train_likelihood = self.run_epoch(mspu=4000, train_list=train_list)
+
+            self.scores = self.predict()
+
+            self.loss_curve['training_loglike'].append(self.loss_log_likelihood(train_list))
+            print(f"total train log likelihood: {self.loss_curve['training_loglike'][self.current_epoch]:.3f}")

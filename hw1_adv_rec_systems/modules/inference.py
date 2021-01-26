@@ -1,5 +1,5 @@
-from . import bpr, data_bpr
-from . import config
+import bpr, data_bpr
+import config
 
 
 def infer_triple(model, u, i1, i2):
